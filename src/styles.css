@@ -274,7 +274,7 @@ h3 { color: var(--text); font-size: 14px; font-weight: 500; }
 .chat-empty p { color: var(--text); font-size: 16px; }
 .chat-empty small { color: var(--text-faint); font-size: 9px; }
 .chat-composer { display: flex; min-height: 50px; align-items: flex-end; border: 1px solid var(--line-light); border-radius: 6px; background: var(--inset); margin: 0 0 0; box-shadow: none; transition: border-color .16s; }
-.chat-composer textarea { width: 100%; min-height: 38px; max-height: 120px; resize: vertical; border: 0; outline: 0; color: var(--text); background: transparent; padding: 11px 12px; font-family: inherit; font-size: 11px; line-height: 1.45; }
+.chat-composer textarea { width: 100%; height: 48px; min-height: 48px; max-height: 48px; resize: none; overflow-y: auto; border: 0; outline: 0; color: var(--text); background: transparent; padding: 14px 12px; font-family: inherit; font-size: 11px; line-height: 1.45; }
 .chat-composer textarea::placeholder { color: var(--text-faint); }
 .chat-composer:focus-within { border-color: var(--accent); }
 .composer-send { display: grid; width: 44px; height: 48px; flex: 0 0 44px; place-items: center; border: 0; color: var(--accent); background: transparent; transition: color .16s, opacity .16s; }
