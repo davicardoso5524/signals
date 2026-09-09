@@ -1,0 +1,54 @@
+- generic [ref=e3]:
+  - complementary "Primary navigation" [ref=e4]:
+    - generic "Signal home" [ref=e5]: SIGNAL
+    - generic [ref=e7]: Workspace
+    - navigation [ref=e8]:
+      - button "Home" [ref=e9] [cursor=pointer]
+      - button "People" [active] [ref=e14] [cursor=pointer]
+      - button "Rooms 3" [ref=e20] [cursor=pointer]:
+        - generic [ref=e24]: Rooms
+        - generic [ref=e25]: "3"
+      - button "Recents" [ref=e26] [cursor=pointer]
+      - button "Settings" [ref=e31] [cursor=pointer]
+    - generic [ref=e36]:
+      - generic [ref=e37]:
+        - generic [ref=e38]: JD
+        - generic [ref=e39]:
+          - strong [ref=e40]: João Dias
+          - generic [ref=e41]: Available
+      - button "Open profile settings" [ref=e43] [cursor=pointer]
+  - main [ref=e47]:
+    - generic [ref=e64]:
+      - generic [ref=e65]:
+        - heading "People." [level=1] [ref=e66]
+        - generic [ref=e67]:
+          - generic [ref=e68]:
+            - generic [ref=e72]: Search people
+            - textbox "Search people" [ref=e73]:
+              - /placeholder: Find someone
+          - button "Add person" [ref=e74] [cursor=pointer]
+      - generic "People" [ref=e77]:
+        - generic [ref=e78]:
+          - generic [ref=e79]: DV
+          - generic [ref=e80]:
+            - strong [ref=e81]: Davi Viana
+            - generic [ref=e82]: "@davi"
+          - generic "Online" [ref=e83]
+        - generic [ref=e84]:
+          - generic [ref=e85]: LM
+          - generic [ref=e86]:
+            - strong [ref=e87]: Lucas Mota
+            - generic [ref=e88]: "@lucas"
+          - generic "Online" [ref=e89]
+        - generic [ref=e90]:
+          - generic [ref=e91]: AN
+          - generic [ref=e92]:
+            - strong [ref=e93]: Ana Neri
+            - generic [ref=e94]: "@ana"
+          - generic "Offline" [ref=e95]
+        - generic [ref=e96]:
+          - generic [ref=e97]: RF
+          - generic [ref=e98]:
+            - strong [ref=e99]: Rafael Freire
+            - generic [ref=e100]: "@rafael"
+          - generic "Offline" [ref=e101]

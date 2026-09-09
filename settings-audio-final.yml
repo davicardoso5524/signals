@@ -1,0 +1,76 @@
+- generic [ref=f4e3]:
+  - complementary "Primary navigation" [ref=f4e4]:
+    - generic "Signal home" [ref=f4e5]: SIGNAL
+    - generic [ref=f4e7]: Workspace
+    - navigation [ref=f4e8]:
+      - button "Home" [ref=f4e9] [cursor=pointer]
+      - button "People" [ref=f4e14] [cursor=pointer]
+      - button "Rooms 3" [ref=f4e20] [cursor=pointer]:
+        - generic [ref=f4e24]: Rooms
+        - generic [ref=f4e25]: "3"
+      - button "Settings" [active] [ref=f4e26] [cursor=pointer]
+    - generic [ref=f4e31]:
+      - generic [ref=f4e32]:
+        - generic [ref=f4e33]: JD
+        - generic [ref=f4e34]:
+          - strong [ref=f4e35]: João Dias
+          - generic [ref=f4e36]: Available
+      - button "Open profile settings" [ref=f4e38] [cursor=pointer]
+  - main [ref=f4e42]:
+    - generic [ref=f4e59]:
+      - generic [ref=f4e60]:
+        - generic [ref=f4e61]:
+          - paragraph [ref=f4e62]: System panel
+          - heading "Settings." [level=1] [ref=f4e63]
+          - paragraph [ref=f4e64]: Tune the room around the way you work.
+        - generic [ref=f4e65]: Audio idle
+      - generic [ref=f4e67]:
+        - complementary "Settings sections" [ref=f4e68]:
+          - button "Audio" [ref=f4e69] [cursor=pointer]
+          - button "Video" [ref=f4e70] [cursor=pointer]
+          - button "Network" [ref=f4e71] [cursor=pointer]
+          - button "Shortcuts" [ref=f4e72] [cursor=pointer]
+        - generic [ref=f4e73]:
+          - generic [ref=f4e74]:
+            - generic [ref=f4e76]:
+              - paragraph [ref=f4e77]: Microphone
+              - heading "Input device" [level=2] [ref=f4e78]
+            - combobox "Microphone input device" [ref=f4e80] [cursor=pointer]:
+              - option "Microphone 1" [selected]
+            - generic [ref=f4e81]:
+              - generic [ref=f4e82]: Input level
+              - generic [ref=f4e96]: —
+            - generic [ref=f4e97]:
+              - generic [ref=f4e98]: Mic level
+              - slider "Microphone input volume" [ref=f4e99]: "100"
+              - generic [ref=f4e100]: 100%
+            - generic [ref=f4e101]:
+              - generic [ref=f4e102]: Microphone test is off.
+              - button "Test microphone" [ref=f4e103] [cursor=pointer]
+          - generic [ref=f4e104]:
+            - generic [ref=f4e106]:
+              - paragraph [ref=f4e107]: Headphones
+              - heading "Output device" [level=2] [ref=f4e108]
+            - combobox "Audio output device" [ref=f4e110] [cursor=pointer]:
+              - option "Output 1" [selected]
+            - generic [ref=f4e111]:
+              - generic [ref=f4e112]: Volume
+              - slider "Output volume" [ref=f4e113]: "72"
+              - generic [ref=f4e114]: 72%
+            - generic [ref=f4e115]:
+              - generic [ref=f4e116]: Output test is off.
+              - button "Test output" [ref=f4e117] [cursor=pointer]
+          - generic [ref=f4e118]:
+            - generic [ref=f4e120]:
+              - paragraph [ref=f4e121]: Clear signal
+              - heading "Voice processing" [level=2] [ref=f4e122]
+            - generic [ref=f4e124]:
+              - generic [ref=f4e125]:
+                - strong [ref=f4e126]: Noise reduction
+                - generic [ref=f4e127]: Applied when the microphone test or call starts.
+              - button "Toggle noise reduction" [pressed] [ref=f4e128] [cursor=pointer]
+            - generic [ref=f4e130]:
+              - generic [ref=f4e131]:
+                - strong [ref=f4e132]: Push to talk
+                - generic [ref=f4e133]: Hold a key to open the microphone.
+              - button "Toggle push to talk" [ref=f4e134] [cursor=pointer]

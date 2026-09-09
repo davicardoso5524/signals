@@ -1,0 +1,30 @@
+- generic [ref=f2e3]:
+  - complementary "Primary navigation" [ref=f2e4]:
+    - generic "Signal home" [ref=f2e5]: SIGNAL
+    - generic [ref=f2e7]: Workspace
+    - navigation [ref=f2e8]:
+      - button "Home" [ref=f2e9] [cursor=pointer]
+      - button "People" [ref=f2e14] [cursor=pointer]
+      - button "Rooms 3" [ref=f2e20] [cursor=pointer]:
+        - generic [ref=f2e24]: Rooms
+        - generic [ref=f2e25]: "3"
+      - button "Settings" [ref=f2e26] [cursor=pointer]
+    - generic [ref=f2e31]:
+      - generic [ref=f2e32]:
+        - generic [ref=f2e33]: JD
+        - generic [ref=f2e34]:
+          - strong [ref=f2e35]: João Dias
+          - generic [ref=f2e36]: Available
+      - button "Open profile settings" [ref=f2e38] [cursor=pointer]
+  - main [ref=f2e42]:
+    - generic [ref=f2e45]:
+      - paragraph [ref=f2e46]: SIGNAL
+      - heading "Start a conversation." [level=1] [ref=f2e47]
+      - generic [ref=f2e48]:
+        - button "Create room" [ref=f2e49] [cursor=pointer]
+        - generic [ref=f2e52]: or
+        - generic [ref=f2e53]:
+          - generic [ref=f2e54]: Enter room code
+          - textbox "Enter room code" [ref=f2e55]:
+            - /placeholder: Enter room code…
+          - button "Enter room" [ref=f2e56] [cursor=pointer]

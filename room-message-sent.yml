@@ -1,0 +1,55 @@
+- generic [ref=f5e3]:
+  - complementary "Primary navigation" [ref=f5e4]:
+    - generic "Signal home" [ref=f5e5]: SIGNAL
+    - generic [ref=f5e7]: Workspace
+    - navigation [ref=f5e8]:
+      - button "Home" [ref=f5e9] [cursor=pointer]
+      - button "People" [ref=f5e14] [cursor=pointer]
+      - button "Rooms 3" [ref=f5e20] [cursor=pointer]:
+        - generic [ref=f5e24]: Rooms
+        - generic [ref=f5e25]: "3"
+      - button "Settings" [ref=f5e26] [cursor=pointer]
+    - generic [ref=f5e31]:
+      - generic [ref=f5e32]:
+        - generic [ref=f5e33]: JD
+        - generic [ref=f5e34]:
+          - strong [ref=f5e35]: João Dias
+          - generic [ref=f5e36]: Available
+      - button "Open profile settings" [ref=f5e38] [cursor=pointer]
+  - main [ref=f5e42]:
+    - generic [ref=f5e75]:
+      - button "Rooms" [ref=f5e76] [cursor=pointer]
+      - generic [ref=f5e79]:
+        - generic [ref=f5e80]:
+          - paragraph [ref=f5e81]: Room
+          - heading "Design Review" [level=1] [ref=f5e82]
+        - generic [ref=f5e84]:
+          - generic [ref=f5e85]: 4 in call
+          - button "6 members" [ref=f5e87] [cursor=pointer]
+          - button "Join call" [ref=f5e88] [cursor=pointer]
+          - button "Room actions" [ref=f5e91] [cursor=pointer]
+      - generic [ref=f5e96]:
+        - generic "Chat in Design Review" [ref=f5e97]:
+          - generic [ref=f5e98]:
+            - generic [ref=f5e99]:
+              - strong [ref=f5e100]: João Dias
+              - generic [ref=f5e101]: "@joao"
+              - time [ref=f5e102]: 14:32
+            - paragraph [ref=f5e103]: Consegui corrigir aquela parte.
+          - generic [ref=f5e104]:
+            - generic [ref=f5e105]:
+              - strong [ref=f5e106]: Davi Viana
+              - generic [ref=f5e107]: "@davi"
+              - time [ref=f5e108]: 14:34
+            - paragraph [ref=f5e109]: manda a tela aí
+          - generic [ref=f5e110]:
+            - generic [ref=f5e111]:
+              - strong [ref=f5e112]: João Dias
+              - generic [ref=f5e113]: "@joao"
+              - time [ref=f5e114]: 14:35
+            - paragraph [ref=f5e115]: beleza
+          - paragraph [ref=f5e122]: Mensagem de teste
+        - generic [ref=f5e116]:
+          - textbox "Message Design Review" [active] [ref=f5e117]:
+            - /placeholder: Message Design Review…
+          - button "Send message" [disabled] [ref=f5e118] [cursor=pointer]

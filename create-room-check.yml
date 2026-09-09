@@ -1,0 +1,81 @@
+- generic [ref=e123]:
+  - complementary "Primary navigation" [ref=e124]:
+    - generic "Signal home" [ref=e125]: SIGNAL
+    - generic [ref=e127]: Workspace
+    - navigation [ref=e128]:
+      - button "Home" [ref=e129] [cursor=pointer]
+      - button "People" [ref=e134] [cursor=pointer]
+      - button "Rooms 3" [ref=e140] [cursor=pointer]:
+        - generic [ref=e144]: Rooms
+        - generic [ref=e145]: "3"
+      - button "Recents" [ref=e146] [cursor=pointer]
+      - button "Settings" [ref=e151] [cursor=pointer]
+    - generic [ref=e156]:
+      - generic [ref=e157]:
+        - generic [ref=e158]: JD
+        - generic [ref=e159]:
+          - strong [ref=e160]: João Dias
+          - generic [ref=e161]: Available
+      - button "Open profile settings" [ref=e163] [cursor=pointer]
+  - main [ref=e167]:
+    - generic [ref=e184]:
+      - generic [ref=e185]:
+        - heading "Rooms" [level=1] [ref=e186]
+        - button "Create room" [ref=e187] [cursor=pointer]
+      - generic [ref=e190]:
+        - article [ref=e191]:
+          - generic [ref=e192]: DE
+          - generic [ref=e193]:
+            - heading "Design Review" [level=3] [ref=e194]
+            - paragraph [ref=e195]: 6 people
+          - generic [ref=e196]: 4 in call
+          - button "Join" [ref=e200] [cursor=pointer]
+        - article [ref=e203]:
+          - generic [ref=e204]: PR
+          - generic [ref=e205]:
+            - heading "Product Planning" [level=3] [ref=e206]
+            - paragraph [ref=e207]: 4 people
+          - button "Open" [ref=e209] [cursor=pointer]
+        - article [ref=e212]:
+          - generic [ref=e213]: WE
+          - generic [ref=e214]:
+            - heading "Weekly Sync" [level=3] [ref=e215]
+            - paragraph [ref=e216]: 8 people
+          - button "Open" [ref=e218] [cursor=pointer]
+  - dialog [ref=e221]:
+    - generic [ref=e222]:
+      - generic [ref=e223]:
+        - paragraph [ref=e224]: Signal
+        - heading "Create room" [level=2] [ref=e225]
+      - button "Close dialog" [ref=e226] [cursor=pointer]
+    - generic [ref=e229]:
+      - generic [ref=e230]: Name
+      - textbox "Name" [active] [ref=e231]: Design Review
+      - group "Type" [ref=e232]:
+        - generic [ref=e234] [cursor=pointer]:
+          - radio "Quick room Temporary. Ends when everyone leaves." [ref=e235]
+          - generic [ref=e236]:
+            - strong [ref=e237]: Quick room
+            - generic [ref=e238]: Temporary. Ends when everyone leaves.
+        - generic [ref=e239] [cursor=pointer]:
+          - radio "Persistent room Stays available in Rooms." [checked] [ref=e240]
+          - generic [ref=e241]:
+            - strong [ref=e242]: Persistent room
+            - generic [ref=e243]: Stays available in Rooms.
+      - group "Access" [ref=e244]:
+        - generic [ref=e246] [cursor=pointer]:
+          - radio "Anyone with invite Anyone with the code or link can enter." [checked] [ref=e247]
+          - generic [ref=e248]:
+            - strong [ref=e249]: Anyone with invite
+            - generic [ref=e250]: Anyone with the code or link can enter.
+        - generic [ref=e251] [cursor=pointer]:
+          - radio "Password protected Invite and password are both required." [ref=e252]
+          - generic [ref=e253]:
+            - strong [ref=e254]: Password protected
+            - generic [ref=e255]: Invite and password are both required.
+        - generic [ref=e256] [cursor=pointer]:
+          - radio "Ask to join The owner approves each request." [ref=e257]
+          - generic [ref=e258]:
+            - strong [ref=e259]: Ask to join
+            - generic [ref=e260]: The owner approves each request.
+      - button "Create room" [ref=e261] [cursor=pointer]

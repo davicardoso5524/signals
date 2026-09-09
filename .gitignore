@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+.playwright-cli/
+*.log
+
+# Tauri build artifacts (when the desktop shell is added)
+src-tauri/target/
+src-tauri/.tauri/

@@ -1,0 +1,43 @@
+- generic [ref=f5e3]:
+  - complementary "Primary navigation" [ref=f5e4]:
+    - generic "Signal home" [ref=f5e5]: SIGNAL
+    - generic [ref=f5e7]: Workspace
+    - navigation [ref=f5e8]:
+      - button "Home" [ref=f5e9] [cursor=pointer]
+      - button "People" [ref=f5e14] [cursor=pointer]
+      - button "Rooms 3" [ref=f5e20] [cursor=pointer]:
+        - generic [ref=f5e24]: Rooms
+        - generic [ref=f5e25]: "3"
+      - button "Settings" [ref=f5e26] [cursor=pointer]
+    - generic [ref=f5e31]:
+      - generic [ref=f5e32]:
+        - generic [ref=f5e33]: JD
+        - generic [ref=f5e34]:
+          - strong [ref=f5e35]: João Dias
+          - generic [ref=f5e36]: Available
+      - button "Open profile settings" [ref=f5e38] [cursor=pointer]
+  - main [ref=f5e42]:
+    - generic [ref=f5e44]:
+      - generic [ref=f5e45]:
+        - paragraph [ref=f5e46]: SIGNAL
+        - heading "Start a conversation." [level=1] [ref=f5e47]
+        - generic [ref=f5e48]:
+          - button "Create room" [ref=f5e49] [cursor=pointer]
+          - generic [ref=f5e52]: or
+          - generic [ref=f5e53]:
+            - generic [ref=f5e54]: Enter room code
+            - textbox "Enter room code" [ref=f5e55]:
+              - /placeholder: Enter room code…
+            - button "Enter room" [ref=f5e56] [cursor=pointer]
+      - region "Your rooms" [ref=f5e59]:
+        - generic [ref=f5e61]:
+          - button "DE Design Review 4 in call" [ref=f5e62] [cursor=pointer]:
+            - generic [ref=f5e63]: DE
+            - generic [ref=f5e65]: Design Review
+            - generic [ref=f5e66]: 4 in call
+          - button "PR Product Planning" [ref=f5e67] [cursor=pointer]:
+            - generic [ref=f5e68]: PR
+            - generic [ref=f5e70]: Product Planning
+          - button "WE Weekly Sync" [ref=f5e71] [cursor=pointer]:
+            - generic [ref=f5e72]: WE
+            - generic [ref=f5e74]: Weekly Sync

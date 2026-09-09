@@ -1,0 +1,44 @@
+- generic [ref=e123]:
+  - complementary "Primary navigation" [ref=e124]:
+    - generic "Signal home" [ref=e125]: SIGNAL
+    - generic [ref=e127]: Workspace
+    - navigation [ref=e128]:
+      - button "Home" [ref=e129] [cursor=pointer]
+      - button "People" [ref=e134] [cursor=pointer]
+      - button "Rooms 3" [active] [ref=e140] [cursor=pointer]:
+        - generic [ref=e144]: Rooms
+        - generic [ref=e145]: "3"
+      - button "Recents" [ref=e146] [cursor=pointer]
+      - button "Settings" [ref=e151] [cursor=pointer]
+    - generic [ref=e156]:
+      - generic [ref=e157]:
+        - generic [ref=e158]: JD
+        - generic [ref=e159]:
+          - strong [ref=e160]: João Dias
+          - generic [ref=e161]: Available
+      - button "Open profile settings" [ref=e163] [cursor=pointer]
+  - main [ref=e167]:
+    - generic [ref=e184]:
+      - generic [ref=e185]:
+        - heading "Rooms" [level=1] [ref=e186]
+        - button "Create room" [ref=e187] [cursor=pointer]
+      - generic [ref=e190]:
+        - article [ref=e191]:
+          - generic [ref=e192]: DE
+          - generic [ref=e193]:
+            - heading "Design Review" [level=3] [ref=e194]
+            - paragraph [ref=e195]: 6 people
+          - generic [ref=e196]: 4 in call
+          - button "Join" [ref=e200] [cursor=pointer]
+        - article [ref=e203]:
+          - generic [ref=e204]: PR
+          - generic [ref=e205]:
+            - heading "Product Planning" [level=3] [ref=e206]
+            - paragraph [ref=e207]: 4 people
+          - button "Open" [ref=e209] [cursor=pointer]
+        - article [ref=e212]:
+          - generic [ref=e213]: WE
+          - generic [ref=e214]:
+            - heading "Weekly Sync" [level=3] [ref=e215]
+            - paragraph [ref=e216]: 8 people
+          - button "Open" [ref=e218] [cursor=pointer]
