@@ -7,7 +7,7 @@ import { UpdateGate } from './lib/updater'
 import { createGroup, findProfiles, getOrCreateDirect, listConversations, listMessages as listConversationMessages, listParticipants, sendMessage, subscribeToMessages, type Conversation, type Message, type Profile } from './lib/conversations'
 
 type View = 'Home' | 'People' | 'Rooms' | 'Settings'
-type IconName = 'home' | 'people' | 'rooms' | 'settings' | 'search' | 'plus' | 'arrow' | 'copy' | 'mic' | 'headphones' | 'screen' | 'invite' | 'leave' | 'more' | 'close' | 'eye' | 'sun' | 'moon'
+type IconName = 'home' | 'people' | 'rooms' | 'settings' | 'search' | 'plus' | 'arrow' | 'copy' | 'mic' | 'headphones' | 'screen' | 'invite' | 'leave' | 'more' | 'close' | 'eye' | 'sun' | 'moon' | 'logout'
 type Theme = 'dark' | 'light'
 type RoomMessage = { id: string; roomId: string; authorId: string; authorName: string; username: string; content: string; createdAt: string }
 type Room = { id: string; name: string; meta: string; code: string; state: string; live: boolean; memberCount: number; participantCount: number; kind: 'quick' | 'persistent'; access: 'invite' | 'password' | 'request'; unread: number }
@@ -40,6 +40,7 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
     eye: <><path d="M2.5 12s3.4-5 9.5-5 9.5 5 9.5 5-3.4 5-9.5 5-9.5-5-9.5-5Z" /><circle cx="12" cy="12" r="2.2" /></>,
     sun: <><circle cx="12" cy="12" r="3.5" /><path d="M12 2.5v2M12 19.5v2M4.7 4.7l1.4 1.4M17.9 17.9l1.4 1.4M2.5 12h2M19.5 12h2M4.7 19.3l1.4-1.4M17.9 6.1l1.4-1.4" /></>,
     moon: <><path d="M20.2 15.2A8.3 8.3 0 0 1 8.8 3.8 8.3 8.3 0 1 0 20.2 15.2Z" /></>,
+    logout: <><path d="M10 5H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4" /><path d="m14 8 4 4-4 4M9 12h9" /></>,
   }
   return <svg {...common}>{paths[name]}</svg>
 }
@@ -66,6 +67,7 @@ function SignalWorkspace() {
   const [roomDetail, setRoomDetail] = useState<Room | null>(null)
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [conversationDetail, setConversationDetail] = useState<Conversation | null>(null)
+  const [profileCopied, setProfileCopied] = useState(false)
   const [theme, setTheme] = useState<Theme>(() => document.documentElement.dataset.theme === 'light' ? 'light' : 'dark')
 
   useEffect(() => {
@@ -130,10 +132,18 @@ function SignalWorkspace() {
     window.setTimeout(() => setCopied(false), 1800)
   }
 
+  const copyUsername = async () => {
+    const username = profile?.username
+    if (!username) return
+    try { await navigator.clipboard?.writeText(`@${username}`) } catch { /* clipboard may be unavailable */ }
+    setProfileCopied(true)
+    window.setTimeout(() => setProfileCopied(false), 1800)
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar" aria-label="Primary navigation">
-        <div className="brand-mark"><img src="/signals.png" alt="Signals" /></div>
+        <div className="brand-mark" aria-label="Signals"><span>signals</span><i aria-hidden="true" /></div>
         <div className="sidebar-label">Workspace</div>
         <nav className="nav-list">
           {(['Home', 'People', 'Rooms', 'Settings'] as View[]).map((item) => (
@@ -144,8 +154,8 @@ function SignalWorkspace() {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <div className="local-profile"><span className="avatar avatar-jade">{(profile?.display_name || user?.email || 'S').slice(0, 2).toUpperCase()}</span><span><strong>{profile?.display_name || 'SIGNAL user'}</strong><small>@{profile?.username || 'account'}</small></span><span className="online-dot" /></div>
-          <div className="sidebar-account-actions"><button className="theme-toggle" type="button" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} /></button><button className="logout-button" onClick={() => void signOut()} aria-label="Sign out">↗</button></div>
+          <button className="local-profile" type="button" onClick={() => void copyUsername()} aria-label={profile?.username ? `Copy @${profile.username}` : 'Profile username unavailable'} title={profileCopied ? 'Username copied' : 'Copy username'}><span className="avatar avatar-jade">{(profile?.display_name || user?.email || 'S').slice(0, 2).toUpperCase()}</span><span><strong>{profile?.display_name || 'SIGNAL user'}</strong><small>@{profile?.username || 'account'}{profileCopied ? ' · copied' : ''}</small></span><span className="online-dot" /></button>
+          <div className="sidebar-account-actions"><button className="theme-toggle" type="button" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} /></button><button className="logout-button" type="button" onClick={() => void signOut()} aria-label="Sign out" title="Sign out"><Icon name="logout" size={16} /></button></div>
         </div>
       </aside>
 
