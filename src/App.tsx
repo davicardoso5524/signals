@@ -220,7 +220,7 @@ function MinimalHomeView({ recentRooms, rooms, onCreate, onJoin, onOpenRoom, joi
       </div>
     </div>
     {rooms.length > 0 && <section className="home-room-shortcuts" aria-labelledby="home-room-shortcuts-title"><div className="home-section-label" id="home-room-shortcuts-title">Your rooms</div><div className="home-room-shortcut-list">{rooms.map((room) => <button className="home-room-shortcut" key={room.id || room.code} onClick={() => onOpenRoom(room)}><span className="home-room-tile">{room.name.slice(0, 2).toUpperCase()}<i className={room.live ? 'is-live' : room.unread ? 'has-unread' : ''} /></span><span className="home-room-shortcut-name">{room.name}</span>{room.live && <small>{room.participantCount} in call</small>}</button>)}</div></section>}
-    {recentRooms.length > 0 && <section className="home-recents" aria-labelledby="home-recents-title"><div className="home-section-label" id="home-recents-title">Recent</div><div className="home-recent-list">{recentRooms.map((room) => <button className="home-recent-row" key={room.code} onClick={() => onJoin(room.code)}><span>{room.name}</span><Icon name="arrow" size={15} /></button>)}</div></section>}
+    {recentRooms.length > 0 && <section className="home-recents" aria-labelledby="home-recents-title"><div className="home-section-label" id="home-recents-title">Recent</div><div className="home-recent-list">{recentRooms.map((room) => <button className="home-recent-row" key={room.code} onClick={() => onOpenRoom(room)}><span>{room.name}</span><Icon name="arrow" size={15} /></button>)}</div></section>}
   </section>
 }
 
