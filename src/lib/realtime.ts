@@ -37,6 +37,7 @@ export class RealtimeRoom {
   private events: RealtimeEvents
   private roomId = ''
   private peerId = crypto.randomUUID()
+  private userId = ''
   private connectedPeers = new Set<string>()
   private iceServers: RTCIceServer[] = []
   private peerNames = new Map<string, string>()
@@ -44,10 +45,11 @@ export class RealtimeRoom {
 
   constructor(events: RealtimeEvents) { this.events = events }
 
-  async connect(roomId: string, accessToken: string, displayName = 'Participant') {
+  async connect(roomId: string, accessToken: string, displayName = 'Participant', userId = '') {
     const signalingUrl = getSignalingWebSocketUrl()
     if (!signalingUrl) throw new Error('VITE_SIGNALING_URL is required for production')
     this.roomId = roomId
+    this.userId = userId
     this.iceServers = await getIceServers(accessToken)
     this.events.status('Connecting to signaling')
     devLog('SIGNAL', 'connecting', { roomId })
@@ -98,6 +100,7 @@ export class RealtimeRoom {
     this.socket?.close()
     this.socket = null
     this.roomId = ''
+    this.userId = ''
   }
 
   private addAudioTracks(connection: RTCPeerConnection, stream: MediaStream) {
@@ -116,6 +119,7 @@ export class RealtimeRoom {
   }
 
   private createPeer(peerId: string, initiator: boolean, displayName = 'Participant', userId = '') {
+    if (peerId === this.peerId || (userId && userId === this.userId)) { devLog('WEBRTC', 'ignoring self peer'); return null }
     const existing = this.peers.get(peerId)
     if (existing) return existing
     const connection = new RTCPeerConnection({ iceServers: this.iceServers, iceTransportPolicy: getIceTransportPolicy() })
@@ -140,6 +144,7 @@ export class RealtimeRoom {
     connection.onicecandidate = (event) => { if (event.candidate) { devLog('ICE', `peer ${peerId} candidate type=${event.candidate.type || 'unknown'}`); this.sendSignal(peerId, { candidate: event.candidate.toJSON() }) } }
     connection.onnegotiationneeded = () => { void this.negotiate(peerId, state) }
     connection.ontrack = (event) => {
+      if (state.userId && state.userId === this.userId) { devLog('WEBRTC', 'ignoring self media track'); return }
       const stream = event.streams[0] || new MediaStream([event.track])
       state.remoteStreams.add(stream)
       if (event.track.kind === 'audio') { devLog('WEBRTC', 'remote audio track received', { peerId }); this.events.remoteAudio(stream, peerId) }
@@ -186,7 +191,9 @@ export class RealtimeRoom {
     if (message.type === 'peer-left' && message.peerId) { const state = this.peers.get(message.peerId); state?.connection.close(); state?.pendingCandidates.splice(0); state?.remoteStreams.clear(); this.peers.delete(message.peerId); this.peerNames.delete(message.peerId); this.peerUsers.delete(message.peerId); this.connectedPeers.delete(message.peerId); this.notifyPeerIds(); this.notifyParticipants(); devLog('WEBRTC', 'peer left and state cleared', { peerId: message.peerId }); return }
     if (message.type !== 'signal' || !message.from || !message.payload) return
     const hadPeer = this.peers.has(message.from)
+    if (message.from === this.peerId) { devLog('WEBRTC', 'ignoring self peer'); return }
     const state = this.createPeer(message.from, false)
+    if (!state) return
     if (!hadPeer) this.notifyPeerIds()
     const connection = state.connection
     const description = message.payload.description

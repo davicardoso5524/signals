@@ -178,7 +178,7 @@ function SignalWorkspace() {
       </aside>
 
       <main className="main-area">
-        {inCall && activeRoom && <div className={`call-host ${showCall ? 'is-visible' : 'is-hidden'}`}><CallView room={activeRoom} localName={profile?.display_name || profile?.username || user?.email || 'You'} muted={muted} sharing={sharing} onMute={() => setMuted(!muted)} onShare={() => setSharing(!sharing)} onLeave={() => { setInCall(false); setShowCall(false) }} onInvite={() => setShowInvite(true)} /></div>}
+        {inCall && activeRoom && <div className={`call-host ${showCall ? 'is-visible' : 'is-hidden'}`}><CallView room={activeRoom} localUserId={user?.id || ''} localName={profile?.display_name || profile?.username || user?.email?.split('@')[0] || 'You'} muted={muted} sharing={sharing} onMute={() => setMuted(!muted)} onShare={() => setSharing(!sharing)} onLeave={() => { setInCall(false); setShowCall(false) }} onInvite={() => setShowInvite(true)} /></div>}
         {(!inCall || !showCall) && (
           <div className="content-scroll">
             {view === 'Home' && <MinimalHomeView recentRooms={hasRoomHistory ? roomList.filter((room) => !dismissedRecentRooms.includes(room.id)).slice(0, 3) : []} rooms={roomList.filter((room) => room.kind === 'persistent').slice(0, 4)} onCreate={() => setShowCreate(true)} onJoin={joinRoom} onOpenRoom={(room) => { setRoomDetail(room); setView('Rooms') }} onDismissRecent={(roomId) => { setDismissedRecentRooms((current) => { const next = [...new Set([...current, roomId])]; if (user) localStorage.setItem(`signals.dismissedRecentRooms.${user.id}`, JSON.stringify(next)); return next }) }} joinError={joinError} />}
@@ -566,7 +566,7 @@ function ShortcutsSettings() { const [shortcuts, setShortcuts] = useState({ mute
 
 function SettingsSection({ title, label, children }: { title: string; label: string; children: React.ReactNode }) { return <section className="settings-section"><div className="settings-section-heading"><div><p className="eyebrow">{label}</p><h2>{title}</h2></div><span className="section-screw" /></div>{children}</section> }
 
-function CallView({ room, localName, muted, sharing, onMute, onShare, onLeave, onInvite }: { room: Room; localName: string; muted: boolean; sharing: boolean; onMute: () => void; onShare: () => void; onLeave: () => void; onInvite: () => void }) {
+function CallView({ room, localUserId, localName, muted, sharing, onMute, onShare, onLeave, onInvite }: { room: Room; localUserId: string; localName: string; muted: boolean; sharing: boolean; onMute: () => void; onShare: () => void; onLeave: () => void; onInvite: () => void }) {
   const localStreamRef = useRef<MediaStream | null>(null)
   const rawMicStreamRef = useRef<MediaStream | null>(null)
   const micContextRef = useRef<AudioContext | null>(null)
@@ -639,7 +639,7 @@ function CallView({ room, localName, muted, sharing, onMute, onShare, onLeave, o
     supabase.auth.getSession().then(({ data }) => {
       const accessToken = data.session?.access_token
       if (!accessToken) throw new Error('Session unavailable')
-      return realtime.connect(room.id, accessToken, localName)
+      return realtime.connect(room.id, accessToken, localName, localUserId)
     }).then(() => { if (localStreamRef.current) realtime.setLocalStream(localStreamRef.current) }).catch(() => setMediaStatus('Signaling server unavailable'))
     return () => {
       realtime.close()
@@ -713,6 +713,9 @@ function CallView({ room, localName, muted, sharing, onMute, onShare, onLeave, o
     } catch { devLog('SCREEN', 'screen capture failed or cancelled'); setMediaStatus('Couldn\'t start screen sharing.') }
   }
 
+  const uniqueRemotePeerIds = remotePeerIds.filter((peerId, index, ids) => ids.findIndex((candidate) => (remotePeerUsers[candidate] || candidate) === (remotePeerUsers[peerId] || peerId)) === index)
+  const participantTiles = <div className="participant-tiles"><div className="participant-tile"><span className="participant-tile-avatar">{initialsFor(localName)}</span><strong>{localName}</strong><small>You</small></div>{uniqueRemotePeerIds.map((peerId, index) => { const name = remotePeerNames[peerId] || `Participant ${index + 1}`; return <div className="participant-tile" key={peerId}><span className="participant-tile-avatar">{initialsFor(name)}</span><strong>{name}</strong><small>Connected</small></div> })}</div>
+
   return <section className="call-view">
     <div className="call-header">
       <div><p className="eyebrow">Room {room.code}</p><h1>{room.name}</h1></div>
@@ -721,7 +724,8 @@ function CallView({ room, localName, muted, sharing, onMute, onShare, onLeave, o
     <div ref={screenStageRef} className={`screen-stage ${sharing ? 'is-sharing' : ''} ${remoteVideo ? 'has-remote-video' : ''}`}>
       <div className="stage-grid" />
       {remoteVideo && <video ref={remoteVideoRef} className="remote-video" autoPlay playsInline aria-label="Remote shared screen" />}
-      {!remoteVideo && <div className="stage-center">{sharing ? <><span className="screen-icon"><Icon name="screen" size={30} /></span><span className="stage-kicker">SCREEN SHARE</span><strong>Screen sharing active</strong><span>Live media stream</span></> : <div className="participant-tiles"><div className="participant-tile"><span className="participant-tile-avatar">{initialsFor(localName)}</span><strong>{localName}</strong><small>You</small></div>{remotePeerIds.filter((peerId, index, ids) => ids.findIndex((candidate) => (remotePeerUsers[candidate] || candidate) === (remotePeerUsers[peerId] || peerId)) === index).map((peerId, index) => { const name = remotePeerNames[peerId] || `Participant ${index + 1}`; return <div className="participant-tile" key={peerId}><span className="participant-tile-avatar">{initialsFor(name)}</span><strong>{name}</strong><small>Connected</small></div> })}</div>}</div>}
+      {!remoteVideo && <div className="stage-center">{participantTiles}</div>}
+      {remoteVideo && <div className="call-participant-overlay">{participantTiles}</div>}
       {(remoteVideo || sharing) && <button className="stage-fullscreen-button" aria-label={fullscreen ? 'Exit fullscreen' : 'Open fullscreen'} onClick={toggleFullscreen}><Icon name="fullscreen" size={17} /></button>}
     </div>
     <div className="participant-strip" aria-live="polite"><div className="participant"><strong>{participantCount} {participantCount === 1 ? 'participant' : 'participants'} connected</strong><small>Live room presence</small><span className="signal-bars active"><i /><i /><i /><i /></span></div></div>
