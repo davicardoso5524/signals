@@ -1,3 +1,5 @@
+import { getIceServers, getIceTransportPolicy } from './ice'
+
 type SignalPayload = { description?: RTCSessionDescriptionInit; candidate?: RTCIceCandidateInit }
 
 type RealtimeEvents = {
@@ -19,11 +21,6 @@ type PeerState = {
 }
 
 const SIGNALING_URL = import.meta.env.VITE_SIGNALING_URL || (import.meta.env.DEV ? 'ws://127.0.0.1:8787' : '')
-const ICE_SERVERS: RTCIceServer[] = [
-  { urls: import.meta.env.VITE_STUN_URL || 'stun:stun.l.google.com:19302' },
-  ...(import.meta.env.VITE_TURN_URL ? [{ urls: import.meta.env.VITE_TURN_URL, username: import.meta.env.VITE_TURN_USERNAME, credential: import.meta.env.VITE_TURN_CREDENTIAL }] : []),
-]
-
 const devLog = (scope: string, message: string, detail?: unknown) => {
   if (import.meta.env.DEV) console.info(`[${scope}] ${message}`, detail ?? '')
 }
@@ -96,7 +93,7 @@ export class RealtimeRoom {
   private createPeer(peerId: string, initiator: boolean) {
     const existing = this.peers.get(peerId)
     if (existing) return existing
-    const connection = new RTCPeerConnection({ iceServers: ICE_SERVERS })
+    const connection = new RTCPeerConnection({ iceServers: getIceServers(), iceTransportPolicy: getIceTransportPolicy() })
     const state: PeerState = {
       connection,
       videoTransceiver: connection.addTransceiver('video', { direction: 'sendrecv' }),
@@ -111,7 +108,7 @@ export class RealtimeRoom {
     devLog('WEBRTC', 'peer created', { peerId, polite: state.polite })
     if (this.localStream) this.addAudioTracks(connection, this.localStream)
     if (this.screenStream) void state.videoTransceiver.sender.replaceTrack(this.screenStream.getVideoTracks()[0] || null)
-    connection.onicecandidate = (event) => { if (event.candidate) { devLog('ICE', 'local candidate', { peerId }); this.sendSignal(peerId, { candidate: event.candidate.toJSON() }) } }
+    connection.onicecandidate = (event) => { if (event.candidate) { devLog('ICE', `peer ${peerId} candidate type=${event.candidate.type || 'unknown'}`); this.sendSignal(peerId, { candidate: event.candidate.toJSON() }) } }
     connection.onnegotiationneeded = () => { void this.negotiate(peerId, state) }
     connection.ontrack = (event) => {
       const stream = event.streams[0] || new MediaStream([event.track])
