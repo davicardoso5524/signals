@@ -591,8 +591,8 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
   const speakingContextRef = useRef<AudioContext | null>(null)
   const mutedRef = useRef(muted)
   const realtimeRef = useRef<RealtimeRoom | null>(null)
-  const remoteVideoRef = useRef<HTMLVideoElement | null>(null)
-  const [remoteVideo, setRemoteVideo] = useState<MediaStream | null>(null)
+  const [localScreenStream, setLocalScreenStream] = useState<MediaStream | null>(null)
+  const [remoteScreenStreams, setRemoteScreenStreams] = useState<Record<string, MediaStream>>({})
   const screenStopHandledRef = useRef(false)
 
   const removeSpeakingDetector = (key: string) => {
@@ -705,7 +705,8 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
         if (audio) audio.srcObject = null
         remoteAudioRef.current.delete(peerId)
       },
-      remoteVideo: (stream) => setRemoteVideo(stream),
+      remoteVideo: (stream, peerId) => setRemoteScreenStreams((current) => ({ ...current, [peerId]: stream })),
+      remoteVideoEnded: (peerId) => setRemoteScreenStreams((current) => { const next = { ...current }; delete next[peerId]; return next }),
     })
     realtimeRef.current = realtime
     if (!supabase) { setMediaStatus('Supabase is not configured'); return }
@@ -722,8 +723,8 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
       setRemotePeerIds([])
       setRemotePeerNames({})
       setRemotePeerUsers({})
+      setRemoteScreenStreams({})
       stopSpeakingMonitor()
-      setRemoteVideo(null)
     }
   }, [room.code])
 
@@ -734,15 +735,9 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
 
   useEffect(() => {
     const activePeerIds = new Set(remotePeerIds)
+    setRemoteScreenStreams((current) => Object.fromEntries(Object.entries(current).filter(([peerId]) => activePeerIds.has(peerId))))
     speakingDetectorsRef.current.forEach((_detector, key) => { if (key !== 'local' && !activePeerIds.has(key)) removeSpeakingDetector(key) })
   }, [remotePeerIds])
-
-  useEffect(() => {
-    if (!remoteVideoRef.current) return
-    remoteVideoRef.current.srcObject = remoteVideo
-    if (remoteVideo) void remoteVideoRef.current.play().catch(() => undefined)
-    return () => { if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null }
-  }, [remoteVideo])
 
   useEffect(() => {
     localStreamRef.current?.getAudioTracks().forEach((track) => { track.enabled = !muted })
@@ -773,6 +768,7 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
     screenStopHandledRef.current = true
     const stream = screenStreamRef.current
     screenStreamRef.current = null
+    setLocalScreenStream(null)
     stream?.getTracks().forEach((track) => track.stop())
     realtimeRef.current?.setScreenStream(null)
     devLog('SCREEN', 'local screen share stopped')
@@ -786,6 +782,7 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 30 } }, audio: false })
       screenStreamRef.current = stream
+      setLocalScreenStream(stream)
       realtimeRef.current?.setScreenStream(stream)
       const videoTrack = stream.getVideoTracks()[0]
       screenStopHandledRef.current = false
@@ -798,19 +795,18 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
   }
 
   const uniqueRemotePeerIds = remotePeerIds.filter((peerId, index, ids) => ids.findIndex((candidate) => (remotePeerUsers[candidate] || candidate) === (remotePeerUsers[peerId] || peerId)) === index)
-  const participantTiles = <div className="participant-tiles"><div className={`participant-tile ${speaking.local ? 'is-speaking' : ''}`}><span className="participant-tile-avatar">{initialsFor(localName)}</span><strong>{localName}</strong><small>You</small></div>{uniqueRemotePeerIds.map((peerId, index) => { const name = remotePeerNames[peerId] || `Participant ${index + 1}`; return <div className={`participant-tile ${speaking[peerId] ? 'is-speaking' : ''}`} key={peerId}><span className="participant-tile-avatar">{initialsFor(name)}</span><strong>{name}</strong><small>Connected</small></div> })}</div>
+  const hasScreenShare = Boolean(localScreenStream || Object.keys(remoteScreenStreams).length)
+  const participantTiles = <div className="participant-tiles"><div className={`participant-tile ${speaking.local ? 'is-speaking' : ''} ${localScreenStream ? 'is-screen-sharing' : ''}`}>{localScreenStream ? <video className="participant-screen-video" ref={(element) => { if (element && element.srcObject !== localScreenStream) { element.srcObject = localScreenStream; void element.play().catch(() => undefined) } }} autoPlay muted playsInline aria-label="Your shared screen" /> : <span className="participant-tile-avatar">{initialsFor(localName)}</span>}<strong>{localName}</strong><small>{localScreenStream ? 'Sharing screen · You' : 'You'}</small></div>{uniqueRemotePeerIds.map((peerId, index) => { const name = remotePeerNames[peerId] || `Participant ${index + 1}`; const screenStream = remoteScreenStreams[peerId]; return <div className={`participant-tile ${speaking[peerId] ? 'is-speaking' : ''} ${screenStream ? 'is-screen-sharing' : ''}`} key={peerId}>{screenStream ? <video className="participant-screen-video" ref={(element) => { if (element && element.srcObject !== screenStream) { element.srcObject = screenStream; void element.play().catch(() => undefined) } }} autoPlay muted playsInline aria-label={`${name}'s shared screen`} /> : <span className="participant-tile-avatar">{initialsFor(name)}</span>}<strong>{name}</strong><small>{screenStream ? 'Sharing screen' : 'Connected'}</small></div> })}</div>
 
   return <section className="call-view">
     <div className="call-header">
       <div><p className="eyebrow">Room {room.code}</p><h1>{room.name}</h1></div>
       <div className="call-header-meta"><span className="connection-pill" aria-label="Connected"><span className="status-led" /><span className="sr-only">Connected</span></span><span className="media-status">{mediaStatus}</span><span className="participant-count">{String(participantCount).padStart(2, '0')} participants</span><div className="call-actions-wrap"><button className="icon-button" aria-label="Room actions" aria-expanded={showActions} onClick={() => setShowActions(!showActions)}><Icon name="more" /></button>{showActions && <div className="room-actions-menu call-actions-menu"><button onClick={onInvite}>Invite to room</button><button onClick={onLeave}>Leave call</button></div>}</div></div>
     </div>
-    <div ref={screenStageRef} className={`screen-stage ${sharing ? 'is-sharing' : ''} ${remoteVideo ? 'has-remote-video' : ''}`}>
+    <div ref={screenStageRef} className={`screen-stage ${hasScreenShare ? 'is-sharing' : ''}`}>
       <div className="stage-grid" />
-      {remoteVideo && <video ref={remoteVideoRef} className="remote-video" autoPlay playsInline aria-label="Remote shared screen" />}
-      {!remoteVideo && <div className="stage-center">{participantTiles}</div>}
-      {remoteVideo && <div className="call-participant-overlay">{participantTiles}</div>}
-      {(remoteVideo || sharing) && <button className="stage-fullscreen-button" aria-label={fullscreen ? 'Exit fullscreen' : 'Open fullscreen'} onClick={toggleFullscreen}><Icon name="fullscreen" size={17} /></button>}
+      <div className="stage-center">{participantTiles}</div>
+      {hasScreenShare && <button className="stage-fullscreen-button" aria-label={fullscreen ? 'Exit fullscreen' : 'Open fullscreen'} onClick={toggleFullscreen}><Icon name="fullscreen" size={17} /></button>}
     </div>
     <div className="participant-strip" aria-live="polite"><div className="participant"><strong>{participantCount} {participantCount === 1 ? 'participant' : 'participants'} connected</strong><small>Live room presence</small><span className="signal-bars active"><i /><i /><i /><i /></span></div></div>
     <div className="call-controls"><ControlButton icon="mic" label={muted ? 'Unmute microphone' : 'Mute microphone'} active={!muted} onClick={onMute} /><ControlButton icon="headphones" label={outputMuted ? 'Unmute headphones' : 'Mute headphones'} active={!outputMuted} onClick={toggleOutput} /><ControlButton icon="screen" label={sharing ? 'Stop sharing' : 'Share screen'} active={sharing} onClick={toggleScreenShare} /><ControlButton icon="invite" label="Invite" onClick={onInvite} /><button className="leave-button" aria-label="Leave call" onClick={onLeave}><Icon name="leave" size={17} /><span>Leave</span></button></div>

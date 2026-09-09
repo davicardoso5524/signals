@@ -295,6 +295,8 @@ h3 { color: var(--text); font-size: 14px; font-weight: 500; }
 .participant-tiles { display: flex; max-width: min(760px, 90vw); align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; }
 .participant-tile { display: grid; width: 150px; min-height: 120px; place-items: center; align-content: center; gap: 6px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel-2); padding: 16px 12px; box-shadow: var(--recess); }
 .participant-tile.is-speaking { border-color: var(--success); transition: border-color .16s ease; }
+.participant-tile.is-screen-sharing { width: min(480px, 72vw); aspect-ratio: 16 / 9; grid-template-rows: 1fr auto; }
+.participant-screen-video { display: block; width: 100%; min-height: 0; aspect-ratio: 16 / 9; object-fit: contain; background: #050608; }
 .participant-tile-avatar { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 5px; color: var(--accent); background: var(--accent-muted); font-family: var(--mono); font-size: 12px; }
 .participant-tile strong { color: var(--text); font-size: 12px; font-weight: 500; text-align: center; }
 .participant-tile small { color: var(--text-faint); font-family: var(--mono); font-size: 8px; }
