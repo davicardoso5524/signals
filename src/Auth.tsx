@@ -128,10 +128,15 @@ export function AuthGate({ children }: { children: ReactNode }) {
     return () => listener.subscription.unsubscribe()
   }, [])
   useEffect(() => {
+    let cancelled = false
     if (!supabase || !session?.user) { setProfile(null); return }
-    supabase.from('profiles').select('*').eq('id', session.user.id).maybeSingle().then(({ data }) => setProfile(data as Profile | null))
+    setProfile(null)
+    supabase.from('profiles').select('*').eq('id', session.user.id).maybeSingle().then(({ data }) => {
+      if (!cancelled) setProfile(data as Profile | null)
+    })
+    return () => { cancelled = true }
   }, [session?.user?.id])
-  const value = useMemo(() => ({ session, user: session?.user || null, profile, loading, signOut: async () => { await supabase?.auth.signOut() } }), [session, profile, loading])
+  const value = useMemo(() => ({ session, user: session?.user || null, profile, loading, signOut: async () => { setProfile(null); await supabase?.auth.signOut() } }), [session, profile, loading])
   if (loading) return <main className="auth-shell"><div className="auth-loading">SIGNAL<span className="status-led is-busy" /></div></main>
   if (!session) return <AuthContext.Provider value={value}><AuthForm /></AuthContext.Provider>
   if (recovering) return <AuthContext.Provider value={value}><AuthForm initialMode="recovery" onRecoveryComplete={() => setRecovering(false)} /></AuthContext.Provider>

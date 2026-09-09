@@ -73,7 +73,7 @@ function SignalWorkspace() {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [conversationDetail, setConversationDetail] = useState<Conversation | null>(null)
   const [profileCopied, setProfileCopied] = useState(false)
-  const [theme, setTheme] = useState<Theme>(() => document.documentElement.dataset.theme === 'light' ? 'light' : 'dark')
+  const [theme, setTheme] = useState<Theme>(() => localStorage.getItem('signals-theme') === 'light' ? 'light' : 'dark')
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -160,6 +160,22 @@ function SignalWorkspace() {
     window.setTimeout(() => setProfileCopied(false), 1800)
   }
 
+  const handleSignOut = () => {
+    setInCall(false)
+    setShowCall(false)
+    setSharing(false)
+    setActiveRoom(null)
+    setRoomDetail(null)
+    setConversationDetail(null)
+    setRoomList([])
+    setConversations([])
+    setHasRoomHistory(false)
+    void signOut()
+  }
+
+  const accountName = profile?.display_name?.trim() || profile?.username?.trim() || user?.email?.split('@')[0]?.trim() || '?'
+  const accountUsername = profile?.username?.trim()
+
   return (
     <div className="app-shell">
       <aside className="sidebar" aria-label="Primary navigation">
@@ -174,8 +190,8 @@ function SignalWorkspace() {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <button className="local-profile" type="button" onClick={() => void copyUsername()} aria-label={profile?.username ? `Copy @${profile.username}` : 'Profile username unavailable'} title={profileCopied ? 'Username copied' : 'Copy username'}><span className="avatar avatar-jade">{(profile?.display_name || user?.email || 'S').slice(0, 2).toUpperCase()}</span><span><strong>{profile?.display_name || 'SIGNAL user'}</strong><small>@{profile?.username || 'account'}{profileCopied ? ' · copied' : ''}</small></span><span className="online-dot" /></button>
-          <div className="sidebar-account-actions"><button className="theme-toggle" type="button" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} /></button><button className="logout-button" type="button" onClick={() => void signOut()} aria-label="Sign out" title="Sign out"><Icon name="logout" size={16} /></button></div>
+          <button className="local-profile" type="button" onClick={() => void copyUsername()} aria-label={accountUsername ? `Copy @${accountUsername}` : 'Profile username unavailable'} title={profileCopied ? 'Username copied' : 'Copy username'}><span className="avatar avatar-jade">{initialsFor(accountName)}</span><span><strong>{accountName}</strong><small>{accountUsername ? `@${accountUsername}` : profile ? 'Username unavailable' : 'Loading profile…'}{profileCopied ? ' · copied' : ''}</small></span></button>
+          <div className="sidebar-account-actions"><button className="theme-toggle" type="button" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} /></button><button className="logout-button" type="button" onClick={handleSignOut} aria-label="Sign out" title="Sign out"><Icon name="logout" size={16} /></button></div>
         </div>
       </aside>
 
