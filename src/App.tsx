@@ -143,7 +143,7 @@ function SignalWorkspace() {
   return (
     <div className="app-shell">
       <aside className="sidebar" aria-label="Primary navigation">
-        <div className="brand-mark" aria-label="Signals"><span>signals</span><i aria-hidden="true" /></div>
+        <div className="brand-mark" aria-label="Signals"><i aria-hidden="true" /><span>SIGNAL</span></div>
         <div className="sidebar-label">Workspace</div>
         <nav className="nav-list">
           {(['Home', 'People', 'Rooms', 'Settings'] as View[]).map((item) => (
