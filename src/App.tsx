@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { RealtimeRoom } from './lib/realtime'
 import { AuthGate, useAuth } from './Auth'
-import { createRoom as createRoomInSupabase, listMessages, listRooms, sendRoomMessage, subscribeToRoomMessages } from './lib/rooms'
+import { createRoom as createRoomInSupabase, joinRoomByCode, listMessages, listRooms, sendRoomMessage, subscribeToRoomMessages } from './lib/rooms'
 import { supabase } from './lib/supabase'
 import { UpdateGate } from './lib/updater'
 import { createGroup, findProfiles, getOrCreateDirect, listConversations, listMessages as listConversationMessages, listParticipants, sendMessage, subscribeToMessages, type Conversation, type Message, type Profile } from './lib/conversations'
@@ -15,8 +15,8 @@ type Person = { id: string; initials: string; name: string; username: string; to
 
 const people: Person[] = []
 
-function mapRoom(record: { id: string; name: string; code: string; kind: Room['kind']; access: Room['access'] }): Room {
-  return { id: record.id, name: record.name, meta: '0 people', code: record.code, state: 'Ready', live: false, memberCount: 0, participantCount: 0, kind: record.kind, access: record.access, unread: 0 }
+function mapRoom(record: { id: string; name: string; code: string; kind: Room['kind']; access: Room['access']; member_count?: number }): Room {
+  return { id: record.id, name: record.name, meta: `${record.member_count || 0} people`, code: record.code, state: 'Ready', live: false, memberCount: record.member_count || 0, participantCount: 0, kind: record.kind, access: record.access, unread: 0 }
 }
 
 function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
@@ -102,7 +102,7 @@ function SignalWorkspace() {
     if (supabase && user) {
       try {
         const saved = await createRoomInSupabase({ name: room.name, code: room.code, kind: room.kind, access: room.access }, user.id)
-        if (saved) room.id = saved.id
+        if (saved) { room.id = saved.id; room.memberCount = 1; room.meta = '1 person' }
       } catch { return }
     }
     persistRooms([room, ...roomList.filter((item) => item.code !== room.code)])
@@ -116,13 +116,23 @@ function SignalWorkspace() {
     setRoomPassword('')
   }
 
-  const joinRoom = (requestedCode: string) => {
-    const room = roomList.find((item) => item.code === requestedCode.trim().toUpperCase())
-    if (!room) { setJoinError('Room not found. Check the code and try again.'); return }
-    setActiveRoom(room)
-    setJoinError('')
-    setInCall(true)
-    setShowCall(true)
+  const joinRoom = async (requestedCode: string) => {
+    if (!requestedCode.trim() || !user) { setJoinError('Enter a room code.'); return }
+    try {
+      const joined = await joinRoomByCode(requestedCode)
+      if (!joined) throw new Error('Room not found')
+      const room = mapRoom({ ...joined, member_count: 0 })
+      const refreshed = await listRooms()
+      const savedRoom = refreshed.find((item) => item.id === joined.id)
+      const mappedRoom = savedRoom ? mapRoom(savedRoom) : room
+      setRoomList((current) => [mappedRoom, ...current.filter((item) => item.id !== mappedRoom.id)])
+      setActiveRoom(mappedRoom)
+      setRoomDetail(mappedRoom)
+      setJoinError('')
+      setView('Rooms')
+      setInCall(true)
+      setShowCall(true)
+    } catch { setJoinError('Room not found. Check the code and try again.') }
   }
 
   const copyCode = async (room = activeRoom) => {
@@ -534,7 +544,12 @@ function CallView({ room, muted, sharing, onMute, onShare, onLeave, onInvite }: 
       remoteVideo: (stream) => setRemoteVideo(stream),
     })
     realtimeRef.current = realtime
-    realtime.connect(room.code).then(() => { if (localStreamRef.current) realtime.setLocalStream(localStreamRef.current) }).catch(() => setMediaStatus('Signaling server unavailable'))
+    if (!supabase) { setMediaStatus('Supabase is not configured'); return }
+    supabase.auth.getSession().then(({ data }) => {
+      const accessToken = data.session?.access_token
+      if (!accessToken) throw new Error('Session unavailable')
+      return realtime.connect(room.id, accessToken)
+    }).then(() => { if (localStreamRef.current) realtime.setLocalStream(localStreamRef.current) }).catch(() => setMediaStatus('Signaling server unavailable'))
     return () => { realtime.close(); realtimeRef.current = null; setRemoteVideo(null) }
   }, [room.code])
 

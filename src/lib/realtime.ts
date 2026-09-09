@@ -7,7 +7,7 @@ type RealtimeEvents = {
   remoteVideo: (stream: MediaStream, peerId: string) => void
 }
 
-const SIGNALING_URL = import.meta.env.VITE_SIGNALING_URL || 'ws://127.0.0.1:8787'
+const SIGNALING_URL = import.meta.env.VITE_SIGNALING_URL || (import.meta.env.DEV ? 'ws://127.0.0.1:8787' : '')
 const ICE_SERVERS: RTCIceServer[] = [
   { urls: import.meta.env.VITE_STUN_URL || 'stun:stun.l.google.com:19302' },
   ...(import.meta.env.VITE_TURN_URL ? [{ urls: import.meta.env.VITE_TURN_URL, username: import.meta.env.VITE_TURN_USERNAME, credential: import.meta.env.VITE_TURN_CREDENTIAL }] : []),
@@ -25,13 +25,14 @@ export class RealtimeRoom {
 
   constructor(events: RealtimeEvents) { this.events = events }
 
-  async connect(roomId: string) {
+  async connect(roomId: string, accessToken: string) {
+    if (!SIGNALING_URL) throw new Error('VITE_SIGNALING_URL is required for production')
     this.roomId = roomId
     this.events.status('Connecting to signaling')
     await new Promise<void>((resolve, reject) => {
       const socket = new WebSocket(SIGNALING_URL)
       this.socket = socket
-      socket.onopen = () => { socket.send(JSON.stringify({ type: 'join', roomId, peerId: this.peerId })); resolve() }
+      socket.onopen = () => { socket.send(JSON.stringify({ type: 'join', roomId, peerId: this.peerId, accessToken })); resolve() }
       socket.onerror = () => reject(new Error('Signaling connection failed'))
       socket.onclose = () => this.events.status('Signaling disconnected')
       socket.onmessage = (event) => this.handleMessage(JSON.parse(event.data))

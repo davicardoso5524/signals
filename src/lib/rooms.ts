@@ -1,23 +1,29 @@
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { supabase } from './supabase'
 
-export type RoomRecord = { id: string; owner_id: string; name: string; code: string; kind: 'quick' | 'persistent'; access: 'invite' | 'password' | 'request'; created_at: string }
+export type RoomRecord = { id: string; owner_id: string; name: string; code: string; kind: 'quick' | 'persistent'; access: 'invite' | 'password' | 'request'; created_at: string; member_count?: number }
 export type MessageRecord = { id: string; room_id: string; author_id: string; content: string; created_at: string; author?: { username: string; display_name: string } | null }
 
 export async function createRoom(input: Pick<RoomRecord, 'name' | 'code' | 'kind' | 'access'>, userId: string) {
   if (!supabase) return null
-  const { data, error } = await supabase.from('rooms').insert({ ...input, owner_id: userId }).select('*').single()
+  void userId
+  const { data, error } = await supabase.rpc('create_signal_room', { room_name: input.name, room_code: input.code, room_kind: input.kind, room_access: input.access }).single()
   if (error) throw error
-  const membership = await supabase.from('room_members').insert({ room_id: data.id, user_id: userId })
-  if (membership.error) throw membership.error
+  return data as RoomRecord
+}
+
+export async function joinRoomByCode(roomCode: string) {
+  if (!supabase) return null
+  const { data, error } = await supabase.rpc('join_signal_room_by_code', { room_code: roomCode.trim() }).single()
+  if (error) throw error
   return data as RoomRecord
 }
 
 export async function listRooms() {
   if (!supabase) return [] as RoomRecord[]
-  const { data, error } = await supabase.from('rooms').select('*').order('created_at', { ascending: false })
+  const { data, error } = await supabase.from('rooms').select('id,owner_id,name,code,kind,access,created_at,room_members(user_id)').order('created_at', { ascending: false })
   if (error) throw error
-  return (data || []) as RoomRecord[]
+  return (data || []).map((room) => ({ ...room, member_count: Array.isArray(room.room_members) ? room.room_members.length : 0 })) as unknown as RoomRecord[]
 }
 
 export async function listMessages(roomId: string) {
