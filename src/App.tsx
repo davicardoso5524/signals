@@ -3,9 +3,11 @@ import { RealtimeRoom } from './lib/realtime'
 import { AuthGate, useAuth } from './Auth'
 import { createRoom as createRoomInSupabase, listMessages, listRooms, sendRoomMessage, subscribeToRoomMessages } from './lib/rooms'
 import { supabase } from './lib/supabase'
+import { UpdateGate } from './lib/updater'
 
 type View = 'Home' | 'People' | 'Rooms' | 'Settings'
-type IconName = 'home' | 'people' | 'rooms' | 'settings' | 'search' | 'plus' | 'arrow' | 'copy' | 'mic' | 'headphones' | 'screen' | 'invite' | 'leave' | 'more' | 'close' | 'eye'
+type IconName = 'home' | 'people' | 'rooms' | 'settings' | 'search' | 'plus' | 'arrow' | 'copy' | 'mic' | 'headphones' | 'screen' | 'invite' | 'leave' | 'more' | 'close' | 'eye' | 'sun' | 'moon'
+type Theme = 'dark' | 'light'
 type RoomMessage = { id: string; roomId: string; authorId: string; authorName: string; username: string; content: string; createdAt: string }
 type RoomMember = { roomId: string; userId: string; joinedAt: string }
 type RoomReadState = { roomId: string; userId: string; lastReadMessageId?: string; lastReadAt?: string }
@@ -49,6 +51,8 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
     more: <><circle cx="5" cy="12" r="1" fill="currentColor" /><circle cx="12" cy="12" r="1" fill="currentColor" /><circle cx="19" cy="12" r="1" fill="currentColor" /></>,
     close: <><path d="m6 6 12 12M18 6 6 18" /></>,
     eye: <><path d="M2.5 12s3.4-5 9.5-5 9.5 5 9.5 5-3.4 5-9.5 5-9.5-5-9.5-5Z" /><circle cx="12" cy="12" r="2.2" /></>,
+    sun: <><circle cx="12" cy="12" r="3.5" /><path d="M12 2.5v2M12 19.5v2M4.7 4.7l1.4 1.4M17.9 17.9l1.4 1.4M2.5 12h2M19.5 12h2M4.7 19.3l1.4-1.4M17.9 6.1l1.4-1.4" /></>,
+    moon: <><path d="M20.2 15.2A8.3 8.3 0 0 1 8.8 3.8 8.3 8.3 0 1 0 20.2 15.2Z" /></>,
   }
   return <svg {...common}>{paths[name]}</svg>
 }
@@ -76,6 +80,13 @@ function SignalWorkspace() {
   const [hasRoomHistory, setHasRoomHistory] = useState(() => Boolean(localStorage.getItem('signal.rooms')))
   const [activeRoom, setActiveRoom] = useState<Room>(rooms[0])
   const [roomDetail, setRoomDetail] = useState<Room | null>(null)
+  const [theme, setTheme] = useState<Theme>(() => document.documentElement.dataset.theme === 'light' ? 'light' : 'dark')
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    localStorage.setItem('signals-theme', theme)
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'light' ? '#f7f8fa' : '#050608')
+  }, [theme])
 
   useEffect(() => {
     if (!supabase || !user) return
@@ -126,7 +137,7 @@ function SignalWorkspace() {
   return (
     <div className="app-shell">
       <aside className="sidebar" aria-label="Primary navigation">
-        <div className="brand-mark" aria-label="Signal home"><span className="brand-pulse" />SIGNAL</div>
+        <div className="brand-mark"><img src="/signals.png" alt="Signals" /></div>
         <div className="sidebar-label">Workspace</div>
         <nav className="nav-list">
           {(['Home', 'People', 'Rooms', 'Settings'] as View[]).map((item) => (
@@ -138,7 +149,7 @@ function SignalWorkspace() {
         </nav>
         <div className="sidebar-bottom">
           <div className="local-profile"><span className="avatar avatar-jade">{(profile?.display_name || user?.email || 'S').slice(0, 2).toUpperCase()}</span><span><strong>{profile?.display_name || 'SIGNAL user'}</strong><small>@{profile?.username || 'account'}</small></span><span className="online-dot" /></div>
-          <div className="sidebar-account-actions"><button className="settings-button" onClick={() => { setView('Settings'); setRoomDetail(null); setShowCall(false) }} aria-label="Open profile settings"><Icon name="settings" /></button><button className="logout-button" onClick={() => void signOut()} aria-label="Sign out">↗</button></div>
+          <div className="sidebar-account-actions"><button className="theme-toggle" type="button" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} /></button><button className="logout-button" onClick={() => void signOut()} aria-label="Sign out">↗</button></div>
         </div>
       </aside>
 
@@ -165,7 +176,7 @@ function SignalWorkspace() {
 }
 
 export default function App() {
-  return <AuthGate><SignalWorkspace /></AuthGate>
+  return <UpdateGate><AuthGate><SignalWorkspace /></AuthGate></UpdateGate>
 }
 
 function HomeView({ room, onCreate, onJoin, onEnterCall, onCopy, copied, connecting, onTestConnection }: { room: Room; onCreate: () => void; onJoin: () => void; onEnterCall: () => void; onCopy: () => void; copied: boolean; connecting: boolean; onTestConnection: () => void }) {

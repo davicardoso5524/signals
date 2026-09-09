@@ -9,3 +9,4 @@ dist/
 # Tauri build artifacts (when the desktop shell is added)
 src-tauri/target/
 src-tauri/.tauri/
+src-tauri/gen/

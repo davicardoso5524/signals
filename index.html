@@ -3,12 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#111311" />
+    <meta name="theme-color" content="#050608" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>Signal — focused communication</title>
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      (function () {
+        var savedTheme = localStorage.getItem('signals-theme');
+        document.documentElement.dataset.theme = savedTheme === 'light' ? 'light' : 'dark';
+      }());
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
