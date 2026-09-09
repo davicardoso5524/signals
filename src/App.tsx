@@ -14,6 +14,7 @@ type Room = { id: string; name: string; meta: string; code: string; state: strin
 type Person = { id: string; initials: string; name: string; username: string; tone: string; active: boolean; role?: string }
 
 const people: Person[] = []
+const devLog = (scope: string, message: string) => { if (import.meta.env.DEV) console.info(`[${scope}] ${message}`) }
 
 function mapRoom(record: { id: string; name: string; code: string; kind: Room['kind']; access: Room['access']; member_count?: number }): Room {
   return { id: record.id, name: record.name, meta: `${record.member_count || 0} people`, code: record.code, state: 'Ready', live: false, memberCount: record.member_count || 0, participantCount: 0, kind: record.kind, access: record.access, unread: 0 }
@@ -509,6 +510,7 @@ function CallView({ room, muted, sharing, onMute, onShare, onLeave, onInvite }: 
   const realtimeRef = useRef<RealtimeRoom | null>(null)
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null)
   const [remoteVideo, setRemoteVideo] = useState<MediaStream | null>(null)
+  const screenStopHandledRef = useRef(false)
 
   useEffect(() => {
     let cancelled = false
@@ -532,7 +534,7 @@ function CallView({ room, muted, sharing, onMute, onShare, onLeave, onInvite }: 
       } catch { setMediaStatus('Microphone permission needed') }
     }
     prepareMicrophone()
-    return () => { cancelled = true; localStreamRef.current?.getTracks().forEach((track) => track.stop()); rawMicStreamRef.current?.getTracks().forEach((track) => track.stop()); micContextRef.current?.close(); screenStreamRef.current?.getTracks().forEach((track) => track.stop()) }
+    return () => { cancelled = true; localStreamRef.current?.getTracks().forEach((track) => track.stop()); rawMicStreamRef.current?.getTracks().forEach((track) => track.stop()); micContextRef.current?.close(); screenStreamRef.current?.getTracks().forEach((track) => track.stop()); realtimeRef.current?.setScreenStream(null) }
   }, [])
 
   useEffect(() => {
@@ -554,49 +556,46 @@ function CallView({ room, muted, sharing, onMute, onShare, onLeave, onInvite }: 
   }, [room.code])
 
   useEffect(() => {
-    const stage = document.querySelector('.screen-stage')
-    if (!stage) return
-    stage.querySelector('.remote-video')?.remove()
-    stage.classList.toggle('has-remote-video', Boolean(remoteVideo))
-    if (remoteVideo) {
-      const video = document.createElement('video')
-      video.className = 'remote-video'
-      video.autoplay = true
-      video.playsInline = true
-      video.setAttribute('aria-label', 'Remote shared screen')
-      video.srcObject = remoteVideo
-      stage.appendChild(video)
-      return () => video.remove()
-    }
+    if (!remoteVideoRef.current) return
+    remoteVideoRef.current.srcObject = remoteVideo
+    if (remoteVideo) void remoteVideoRef.current.play().catch(() => undefined)
+    return () => { if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null }
   }, [remoteVideo])
 
   useEffect(() => {
     localStreamRef.current?.getAudioTracks().forEach((track) => { track.enabled = !muted })
   }, [muted])
 
+  const stopScreenShare = () => {
+    if (screenStopHandledRef.current) return
+    screenStopHandledRef.current = true
+    const stream = screenStreamRef.current
+    screenStreamRef.current = null
+    stream?.getTracks().forEach((track) => track.stop())
+    realtimeRef.current?.setScreenStream(null)
+    devLog('SCREEN', 'local screen share stopped')
+    setMediaStatus('Microphone ready')
+    if (sharing) onShare()
+  }
+
   const toggleScreenShare = async () => {
-    if (sharing) {
-      const stream = screenStreamRef.current
-      screenStreamRef.current = null
-      stream?.getTracks().forEach((track) => track.stop())
-      realtimeRef.current?.setScreenStream(null)
-      setMediaStatus('Microphone ready')
-      onShare()
-      return
-    }
+    if (sharing) { stopScreenShare(); return }
     if (!navigator.mediaDevices?.getDisplayMedia) { setMediaStatus('Screen capture unavailable'); return }
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: { width: 1920, height: 1080, frameRate: 30 }, audio: true })
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 30 } }, audio: false })
       screenStreamRef.current = stream
       realtimeRef.current?.setScreenStream(stream)
       const videoTrack = stream.getVideoTracks()[0]
-      videoTrack.onended = () => { if (screenStreamRef.current) { screenStreamRef.current = null; setMediaStatus('Microphone ready'); onShare() } }
+      screenStopHandledRef.current = false
+      if ('contentHint' in videoTrack) videoTrack.contentHint = 'detail'
+      videoTrack.onended = stopScreenShare
+      devLog('SCREEN', 'local screen track added')
       setMediaStatus('Screen capture active')
       onShare()
-    } catch { setMediaStatus('Screen sharing was cancelled') }
+    } catch { devLog('SCREEN', 'screen capture failed or cancelled'); setMediaStatus('Couldn\'t start screen sharing.') }
   }
 
-  return <section className="call-view"><div className="call-header"><div><p className="eyebrow">Room {room.code}</p><h1>{room.name}</h1></div><div className="call-header-meta"><span className="connection-pill" aria-label="Connected"><span className="status-led" /><span className="sr-only">Connected</span></span><span className="media-status">{mediaStatus}</span><span className="participant-count">{String(participantCount).padStart(2, '0')} participants</span><button className="icon-button" aria-label="Room actions"><Icon name="more" /></button></div></div><div className={`screen-stage ${sharing ? 'is-sharing' : ''}`}><div className="stage-grid" /><div className="stage-center">{sharing ? <><span className="screen-icon"><Icon name="screen" size={30} /></span><span className="stage-kicker">SCREEN SHARE</span><strong>Screen sharing active</strong><span>Live media stream</span></> : <><span className="room-symbol large">{room.name.slice(0, 2).toUpperCase()}</span><strong>Ready to share the room</strong><span>Start screen sharing when you need the focus.</span></>}</div><div className="stage-topline"><span>{sharing ? 'SCREEN SHARE' : 'VOICE SESSION'}</span><span>{sharing ? 'Live media stream' : 'No content shared'}</span></div></div><div className="participant-strip" aria-live="polite"><div className="participant"><strong>{participantCount} {participantCount === 1 ? 'participant' : 'participants'} connected</strong><small>Live room presence</small><span className="signal-bars active"><i /><i /><i /><i /></span></div></div><div className="call-controls"><ControlButton icon="mic" label={muted ? 'Unmute' : 'Mute'} active={!muted} onClick={onMute} /><ControlButton icon="headphones" label="Output" /><ControlButton icon="screen" label={sharing ? 'Stop sharing' : 'Share screen'} active={sharing} onClick={toggleScreenShare} /><ControlButton icon="invite" label="Invite" onClick={onInvite} /><button className="leave-button" aria-label="Leave call" onClick={onLeave}><Icon name="leave" size={17} /><span>Leave</span></button></div></section>
+  return <section className="call-view"><div className="call-header"><div><p className="eyebrow">Room {room.code}</p><h1>{room.name}</h1></div><div className="call-header-meta"><span className="connection-pill" aria-label="Connected"><span className="status-led" /><span className="sr-only">Connected</span></span><span className="media-status">{mediaStatus}</span><span className="participant-count">{String(participantCount).padStart(2, '0')} participants</span><button className="icon-button" aria-label="Room actions"><Icon name="more" /></button></div></div><div className={`screen-stage ${sharing ? 'is-sharing' : ''} ${remoteVideo ? 'has-remote-video' : ''}`}><div className="stage-grid" />{remoteVideo && <video ref={remoteVideoRef} className="remote-video" autoPlay playsInline aria-label="Remote shared screen" />}{!remoteVideo && <div className="stage-center">{sharing ? <><span className="screen-icon"><Icon name="screen" size={30} /></span><span className="stage-kicker">SCREEN SHARE</span><strong>Screen sharing active</strong><span>Live media stream</span></> : <><span className="room-symbol large">{room.name.slice(0, 2).toUpperCase()}</span><strong>Ready to share the room</strong><span>Start screen sharing when you need the focus.</span></>}</div>}<div className="stage-topline"><span>{sharing ? 'SCREEN SHARE' : 'VOICE SESSION'}</span><span>{sharing ? 'Live media stream' : 'No content shared'}</span></div></div><div className="participant-strip" aria-live="polite"><div className="participant"><strong>{participantCount} {participantCount === 1 ? 'participant' : 'participants'} connected</strong><small>Live room presence</small><span className="signal-bars active"><i /><i /><i /><i /></span></div></div><div className="call-controls"><ControlButton icon="mic" label={muted ? 'Unmute' : 'Mute'} active={!muted} onClick={onMute} /><ControlButton icon="headphones" label="Output" /><ControlButton icon="screen" label={sharing ? 'Stop sharing' : 'Share screen'} active={sharing} onClick={toggleScreenShare} /><ControlButton icon="invite" label="Invite" onClick={onInvite} /><button className="leave-button" aria-label="Leave call" onClick={onLeave}><Icon name="leave" size={17} /><span>Leave</span></button></div></section>
 }
 
 function ControlButton({ icon, label, active, onClick }: { icon: IconName; label: string; active?: boolean; onClick?: () => void }) { return <button className={`control-button ${active ? 'active' : ''}`} aria-label={label} onClick={onClick}><Icon name={icon} size={18} /><span>{label}</span></button> }
