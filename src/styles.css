@@ -149,6 +149,24 @@ h3 { color: var(--text); font-size: 14px; font-weight: 500; }
 .contact-row:hover .contact-more, .contact-row:focus-within .contact-more { display: grid; }
 .people-empty { max-width: 720px; border-top: 1px solid var(--line); color: var(--text-dim); padding-top: 20px; font-size: 11px; }
 .people-empty .secondary-button { margin-top: 16px; }
+.people-empty small { display: block; margin-top: 7px; color: var(--text-faint); font-size: 10px; }
+.conversation-row { display: flex; width: 100%; min-height: 76px; align-items: center; gap: 12px; border: 0; border-bottom: 1px solid var(--line); color: inherit; background: transparent; padding: 12px 4px; text-align: left; }
+.conversation-row:hover, .conversation-row:focus-visible { background: rgba(255,255,255,.015); }
+.conversation-info { display: grid; min-width: 0; flex: 1; gap: 4px; }
+.conversation-info strong { color: var(--text); font-size: 12px; font-weight: 500; }
+.conversation-info small, .conversation-info span, .conversation-row time, .conversation-subtitle { color: var(--text-faint); font-family: var(--mono); font-size: 9px; }
+.conversation-info span { overflow: hidden; color: var(--text-dim); text-overflow: ellipsis; white-space: nowrap; }
+.conversation-row time { align-self: flex-start; padding-top: 4px; white-space: nowrap; }
+.new-actions { display: grid; gap: 8px; }
+.new-actions .secondary-button { justify-content: flex-start; min-height: 40px; }
+.group-result { display: flex; width: 100%; align-items: center; justify-content: space-between; border: 0; border-bottom: 1px solid var(--line); color: var(--text); background: transparent; padding: 11px 4px; text-align: left; }
+.group-result:hover, .group-result.is-selected { color: var(--amber); }
+.group-result span:first-child { display: grid; gap: 4px; }
+.group-result small { color: var(--text-faint); font-family: var(--mono); font-size: 9px; }
+.conversation-subtitle { margin-top: 6px; }
+.conversation-page .room-chat-header { align-items: flex-start; }
+.conversation-error { margin: 0 0 8px; }
+.conversation-page .chat-message.is-sent { padding-left: 80px; }
 .modal { width: min(380px, calc(100vw - 32px)); }
 .add-person-modal { min-width: 0; width: 100%; }
 .add-person-search { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line-light); border-radius: var(--radius); color: var(--text-faint); background: var(--inset); padding: 0 11px; box-shadow: var(--recess); }
