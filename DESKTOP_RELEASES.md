@@ -34,7 +34,7 @@ continua ignorado pelo Git e deve ser usado no desenvolvimento.
 Atualize a versão em `package.json` e `src-tauri/tauri.conf.json`, faça commit e crie uma tag SemVer:
 
 ```bash
-git tag v0.1.2
+git tag v0.1.3
 git push origin main --tags
 ```
 

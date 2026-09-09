@@ -40,5 +40,5 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: SIGNALS ${{ github.ref_name }}
           releaseBody: Automated desktop release for ${{ github.ref_name }}.
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
