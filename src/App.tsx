@@ -9,28 +9,14 @@ type View = 'Home' | 'People' | 'Rooms' | 'Settings'
 type IconName = 'home' | 'people' | 'rooms' | 'settings' | 'search' | 'plus' | 'arrow' | 'copy' | 'mic' | 'headphones' | 'screen' | 'invite' | 'leave' | 'more' | 'close' | 'eye' | 'sun' | 'moon'
 type Theme = 'dark' | 'light'
 type RoomMessage = { id: string; roomId: string; authorId: string; authorName: string; username: string; content: string; createdAt: string }
-type RoomMember = { roomId: string; userId: string; joinedAt: string }
-type RoomReadState = { roomId: string; userId: string; lastReadMessageId?: string; lastReadAt?: string }
-type CallSession = { id: string; roomId: string; startedAt: string; endedAt?: string }
 type Room = { id: string; name: string; meta: string; code: string; state: string; live: boolean; memberCount: number; participantCount: number; kind: 'quick' | 'persistent'; access: 'invite' | 'password' | 'request'; unread: number }
 type Person = { id: string; initials: string; name: string; username: string; tone: string; active: boolean; role?: string }
+
+const people: Person[] = []
 
 function mapRoom(record: { id: string; name: string; code: string; kind: Room['kind']; access: Room['access'] }): Room {
   return { id: record.id, name: record.name, meta: '0 people', code: record.code, state: 'Ready', live: false, memberCount: 0, participantCount: 0, kind: record.kind, access: record.access, unread: 0 }
 }
-
-const people: Person[] = [
-  { id: 'person-davi', initials: 'DV', name: 'Davi Viana', username: 'davi', tone: 'lime', active: true },
-  { id: 'person-lucas', initials: 'LM', name: 'Lucas Mota', username: 'lucas', tone: 'orange', active: true },
-  { id: 'person-ana', initials: 'AN', name: 'Ana Neri', username: 'ana', tone: 'blue', active: false },
-  { id: 'person-rafael', initials: 'RF', name: 'Rafael Freire', username: 'rafael', tone: 'violet', active: false },
-]
-
-const rooms = [
-  { id: 'room-design-review', name: 'Design Review', meta: '6 people', code: 'AX7-K29', state: 'In call', live: true, memberCount: 6, participantCount: 4, kind: 'persistent' as const, access: 'invite' as const, unread: 2 },
-  { id: 'room-product-planning', name: 'Product Planning', meta: '4 people', code: 'QZ2-PL8', state: 'Ready', live: false, memberCount: 4, participantCount: 0, kind: 'persistent' as const, access: 'invite' as const, unread: 0 },
-  { id: 'room-weekly-sync', name: 'Weekly Sync', meta: '8 people', code: 'MN4-R11', state: 'Ready', live: false, memberCount: 8, participantCount: 0, kind: 'persistent' as const, access: 'invite' as const, unread: 0 },
-]
 
 function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, 'aria-hidden': true }
@@ -68,17 +54,14 @@ function SignalWorkspace() {
   const [sharing, setSharing] = useState(false)
   const [connecting, setConnecting] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [roomName, setRoomName] = useState('Design Review')
+  const [roomName, setRoomName] = useState('')
   const [roomKind, setRoomKind] = useState<'quick' | 'persistent'>('persistent')
   const [roomAccess, setRoomAccess] = useState<'invite' | 'password' | 'request'>('invite')
   const [roomPassword, setRoomPassword] = useState('')
   const [joinError, setJoinError] = useState('')
-  const [roomList, setRoomList] = useState<Room[]>(() => {
-    try { return JSON.parse(localStorage.getItem('signal.rooms') || 'null') || rooms }
-    catch { return rooms }
-  })
-  const [hasRoomHistory, setHasRoomHistory] = useState(() => Boolean(localStorage.getItem('signal.rooms')))
-  const [activeRoom, setActiveRoom] = useState<Room>(rooms[0])
+  const [roomList, setRoomList] = useState<Room[]>([])
+  const [hasRoomHistory, setHasRoomHistory] = useState(false)
+  const [activeRoom, setActiveRoom] = useState<Room | null>(null)
   const [roomDetail, setRoomDetail] = useState<Room | null>(null)
   const [theme, setTheme] = useState<Theme>(() => document.documentElement.dataset.theme === 'light' ? 'light' : 'dark')
 
@@ -92,11 +75,12 @@ function SignalWorkspace() {
     if (!supabase || !user) return
     listRooms().then((records) => {
       const remoteRooms = records.map(mapRoom)
-      if (remoteRooms.length) { setRoomList(remoteRooms); setActiveRoom(remoteRooms[0]); setHasRoomHistory(true) }
+      setRoomList(remoteRooms)
+      if (remoteRooms.length) { setActiveRoom(remoteRooms[0]); setHasRoomHistory(true) }
     }).catch(() => undefined)
   }, [user])
 
-  const persistRooms = (nextRooms: Room[]) => { setRoomList(nextRooms); localStorage.setItem('signal.rooms', JSON.stringify(nextRooms)) }
+  const persistRooms = (nextRooms: Room[]) => { setRoomList(nextRooms); setHasRoomHistory(nextRooms.length > 0) }
   const generateRoomCode = () => `${String.fromCharCode(65 + Math.floor(Math.random() * 26))}${String.fromCharCode(65 + Math.floor(Math.random() * 26))}${Math.floor(10 + Math.random() * 90)}-${String.fromCharCode(65 + Math.floor(Math.random() * 26))}${Math.floor(10 + Math.random() * 90)}`
 
   const createRoom = async () => {
@@ -129,6 +113,7 @@ function SignalWorkspace() {
   }
 
   const copyCode = async (room = activeRoom) => {
+    if (!room) return
     try { await navigator.clipboard?.writeText(room.code) } catch { /* clipboard may be unavailable in preview */ }
     setCopied(true)
     window.setTimeout(() => setCopied(false), 1800)
@@ -143,7 +128,7 @@ function SignalWorkspace() {
           {(['Home', 'People', 'Rooms', 'Settings'] as View[]).map((item) => (
             <button className={`nav-item ${view === item && !inCall ? 'is-active' : ''}`} key={item} onClick={() => { setView(item); setRoomDetail(null); setShowCall(false) }}>
               <Icon name={item.toLowerCase() as IconName} size={17} /><span>{item}</span>
-              {item === 'Rooms' && <span className="nav-count">3</span>}
+              {item === 'Rooms' && roomList.length > 0 && <span className="nav-count">{roomList.length}</span>}
             </button>
           ))}
         </nav>
@@ -154,23 +139,21 @@ function SignalWorkspace() {
       </aside>
 
       <main className="main-area">
-        {null}
-
-        {inCall && <div className={`call-host ${showCall ? 'is-visible' : 'is-hidden'}`}><CallView room={activeRoom} muted={muted} sharing={sharing} onMute={() => setMuted(!muted)} onShare={() => setSharing(!sharing)} onLeave={() => { setInCall(false); setShowCall(false) }} onInvite={() => setShowInvite(true)} /></div>}
+        {inCall && activeRoom && <div className={`call-host ${showCall ? 'is-visible' : 'is-hidden'}`}><CallView room={activeRoom} muted={muted} sharing={sharing} onMute={() => setMuted(!muted)} onShare={() => setSharing(!sharing)} onLeave={() => { setInCall(false); setShowCall(false) }} onInvite={() => setShowInvite(true)} /></div>}
         {(!inCall || !showCall) && (
           <div className="content-scroll">
             {view === 'Home' && <MinimalHomeView recentRooms={hasRoomHistory ? roomList.slice(0, 3) : []} rooms={roomList.filter((room) => room.kind === 'persistent').slice(0, 4)} onCreate={() => setShowCreate(true)} onJoin={joinRoom} onOpenRoom={(room) => { setRoomDetail(room); setView('Rooms') }} joinError={joinError} />}
             {view === 'People' && <MinimalPeopleView />}
-            {view === 'Rooms' && (roomDetail ? <RoomDetailsView room={roomDetail} userId={user?.id} authorName={profile?.display_name || user?.email || 'SIGNAL user'} username={profile?.username || 'account'} onBack={() => setRoomDetail(null)} callActive={inCall && activeRoom.id === roomDetail.id} onStartCall={() => { setActiveRoom(roomDetail); setInCall(true); setShowCall(false) }} onOpenCall={() => setShowCall(true)} onCopy={() => copyCode(roomDetail)} copied={copied} /> : <RoomsView roomList={roomList} onCreate={() => setShowCreate(true)} onOpenRoom={(room) => setRoomDetail(room)} onEnterCall={(room) => { setActiveRoom(room); setInCall(true); setShowCall(true) }} />)}
+            {view === 'Rooms' && (roomDetail ? <RoomDetailsView room={roomDetail} userId={user?.id} authorName={profile?.display_name || user?.email || 'SIGNAL user'} username={profile?.username || 'account'} onBack={() => setRoomDetail(null)} callActive={inCall && activeRoom?.id === roomDetail.id} onStartCall={() => { setActiveRoom(roomDetail); setInCall(true); setShowCall(false) }} onOpenCall={() => setShowCall(true)} onCopy={() => copyCode(roomDetail)} copied={copied} /> : <RoomsView roomList={roomList} onCreate={() => setShowCreate(true)} onOpenRoom={(room) => setRoomDetail(room)} onEnterCall={(room) => { setActiveRoom(room); setInCall(true); setShowCall(true) }} />)}
             {view === 'Settings' && <SettingsView />}
           </div>
         )}
 
-        {inCall && <SessionRail room={activeRoom} inCall={inCall} muted={muted} sharing={sharing} onMute={() => setMuted(!muted)} onEnterCall={() => { setInCall(true); setShowCall(true) }} onCreate={() => setShowCreate(true)} />}
+        {inCall && activeRoom && <SessionRail room={activeRoom} inCall={inCall} muted={muted} sharing={sharing} onMute={() => setMuted(!muted)} onEnterCall={() => { setInCall(true); setShowCall(true) }} onCreate={() => setShowCreate(true)} />}
       </main>
 
       {showCreate && <CreateRoomModal roomName={roomName} setRoomName={setRoomName} roomKind={roomKind} setRoomKind={setRoomKind} roomAccess={roomAccess} setRoomAccess={setRoomAccess} roomPassword={roomPassword} setRoomPassword={setRoomPassword} onClose={() => setShowCreate(false)} onSubmit={createRoom} />}
-      {showInvite && <Modal title={`Invite to ${activeRoom.name}`} onClose={() => setShowInvite(false)}><div className="invite-modal"><p className="eyebrow">Private room code</p><div className="invite-code">{activeRoom.code}</div><p className="form-hint">Send this code to someone you trust. It opens a direct line into the room.</p><button className="primary-button full-width" onClick={() => copyCode()}><Icon name="copy" size={16} />{copied ? 'Code copied' : 'Copy room code'}</button><div className="share-link"><span>signal.local/{activeRoom.code}</span><button className="secondary-button" onClick={() => copyCode()}>Copy link</button></div></div></Modal>}
+      {showInvite && activeRoom && <Modal title={`Invite to ${activeRoom.name}`} onClose={() => setShowInvite(false)}><div className="invite-modal"><p className="eyebrow">Private room code</p><div className="invite-code">{activeRoom.code}</div><p className="form-hint">Send this code to someone you trust. It opens a direct line into the room.</p><button className="primary-button full-width" onClick={() => copyCode()}><Icon name="copy" size={16} />{copied ? 'Code copied' : 'Copy room code'}</button><div className="share-link"><span>{activeRoom.code}</span><button className="secondary-button" onClick={() => copyCode()}>Copy code</button></div></div></Modal>}
     </div>
   )
 }
@@ -246,11 +229,10 @@ function LegacyCreateRoomModal({ roomName, setRoomName, roomKind, setRoomKind, r
 }
 
 function RoomDetailsView({ room, userId, authorName, username, callActive, onBack, onStartCall, onOpenCall, onCopy, copied }: { room: Room; userId?: string; authorName: string; username: string; callActive: boolean; onBack: () => void; onStartCall: () => void; onOpenCall: () => void; onCopy: () => void; copied: boolean }) {
-  const defaultMessages: RoomMessage[] = room.id === 'room-design-review' ? [{ id: 'demo-1', roomId: room.id, authorId: 'person-joao', authorName: 'João Dias', username: 'joao', content: 'Consegui corrigir aquela parte.', createdAt: '14:32' }, { id: 'demo-2', roomId: room.id, authorId: 'person-davi', authorName: 'Davi Viana', username: 'davi', content: 'manda a tela aí', createdAt: '14:34' }, { id: 'demo-3', roomId: room.id, authorId: 'person-joao', authorName: 'João Dias', username: 'joao', content: 'beleza', createdAt: '14:35' }] : []
-  const [messages, setMessages] = useState<RoomMessage[]>(() => { try { return JSON.parse(localStorage.getItem(`signal.messages.${room.id}`) || 'null') || defaultMessages } catch { return defaultMessages } })
+  const [messages, setMessages] = useState<RoomMessage[]>([])
   const [draft, setDraft] = useState('')
   const [showMembers, setShowMembers] = useState(false)
-  const members = [{ name: 'João Dias', username: 'joao', initials: 'JD', tone: 'jade' }, { name: 'Davi Viana', username: 'davi', initials: 'DV', tone: 'lime' }, { name: 'Lucas Mota', username: 'lucas', initials: 'LM', tone: 'orange' }, { name: 'Ana Neri', username: 'ana', initials: 'AN', tone: 'blue' }]
+  const members: { name: string; username: string; initials: string; tone: string }[] = []
   useEffect(() => {
     if (!supabase || !userId) return
     let mounted = true
@@ -267,8 +249,7 @@ function RoomDetailsView({ room, userId, authorName, username, callActive, onBac
   const sendMessage = async () => {
     const content = draft.trim(); if (!content) return
     if (supabase && userId) { try { await sendRoomMessage(room.id, userId, content); setDraft(''); return } catch { return } }
-    const message: RoomMessage = { id: crypto.randomUUID?.() || `message-${Date.now()}`, roomId: room.id, authorId: 'person-joao', authorName, username, content, createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
-    const next = [...messages, message]; setMessages(next); localStorage.setItem(`signal.messages.${room.id}`, JSON.stringify(next)); setDraft('')
+    if (!supabase || !userId) return
   }
   return <section className="page room-chat-page"><button className="text-button room-back" onClick={onBack}><Icon name="arrow" size={15} />Rooms</button><div className="room-chat-header"><div><p className="eyebrow">Room</p><h1>{room.name}{(room.unread || 0) > 0 && <span className="room-unread-dot" />}</h1></div><div className="room-chat-actions">{callActive || room.live ? <span className="room-call-state"><span className="live-dot" />{callActive ? 'Your call is live' : `${room.participantCount} in call`}</span> : null}<button className="secondary-button members-button" onClick={() => setShowMembers(true)}>{room.memberCount || members.length} members</button><button className="primary-button" onClick={callActive ? onOpenCall : onStartCall}>{callActive ? 'Open call' : room.live ? 'Join call' : 'Start call'} <Icon name="arrow" size={15} /></button><button className="more-button" aria-label="Room actions"><Icon name="more" size={16} /></button></div></div><div className="room-chat-layout"><div className="room-chat-history" aria-label={`Chat in ${room.name}`}>{messages.length ? messages.map((message, index) => { const previous = messages[index - 1]; const grouped = previous?.authorId === message.authorId; return <div className={`chat-message ${grouped ? 'is-grouped' : ''}`} key={message.id}>{!grouped && <div className="chat-message-meta"><strong>{message.authorName}</strong><span>@{message.username}</span><time>{message.createdAt}</time></div>}<p>{message.content}</p></div> }) : <div className="chat-empty"><span className="room-symbol large">{room.name.slice(0, 2).toUpperCase()}</span><p>No messages yet.</p><small>Start the conversation in this room.</small></div>}</div><form className="chat-composer" onSubmit={(event) => { event.preventDefault(); sendMessage() }}><textarea aria-label={`Message ${room.name}`} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage() } }} placeholder={`Message ${room.name}…`} rows={1} /><button className="composer-send" type="submit" aria-label="Send message" disabled={!draft.trim()}><Icon name="arrow" size={17} /></button></form></div>{showMembers && <Modal title="Members" onClose={() => setShowMembers(false)}><div className="room-members-modal">{members.slice(0, room.memberCount || members.length).map((member) => <div className="room-member-row" key={member.username}><span className={`avatar avatar-${member.tone}`}>{member.initials}</span><span><strong>{member.name}</strong><small>@{member.username}</small></span></div>)}</div></Modal>}</section>
 }
@@ -472,7 +453,7 @@ function VideoSettings() {
   return <><SettingsSection title="Camera preview" label="Video"><div className="video-preview-panel"><video ref={videoRef} autoPlay muted playsInline className={mirror ? 'is-mirrored' : ''} /><div className="video-preview-overlay"><span className="status-led" />{active ? `${resolution} · ${fps} FPS` : 'Preview offline'}</div></div><div className="audio-test-row"><span>{message}</span><button className="secondary-button" onClick={() => active ? stop() : start()}>{active ? 'Stop preview' : 'Start preview'}</button></div></SettingsSection><SettingsSection title="Capture profile" label="Quality"><div className="control-grid"><label>Camera<select className="device-select" value={deviceId} onChange={(event) => setDeviceId(event.target.value)}><option value="">Default camera</option>{devices.map((device, index) => <option value={device.deviceId} key={device.deviceId}>{device.label || `Camera ${index + 1}`}</option>)}</select></label><label>Resolution<select className="device-select" value={resolution} onChange={(event) => setResolution(event.target.value)}><option>1080p</option><option>720p</option></select></label><label>Frame rate<select className="device-select" value={fps} onChange={(event) => setFps(event.target.value)}><option value="30">30 FPS</option><option value="60">60 FPS</option></select></label></div><div className="toggle-row"><div><strong>Mirror preview</strong><small>Flip your local preview horizontally.</small></div><button className={`toggle ${mirror ? 'is-on' : ''}`} aria-label="Toggle mirrored preview" aria-pressed={mirror} onClick={() => setMirror(!mirror)}><span /></button></div></SettingsSection></>
 }
 
-function NetworkSettings() { const [autoReconnect, setAutoReconnect] = useState(true); const [adaptive, setAdaptive] = useState(true); const [relayFallback, setRelayFallback] = useState(true); const [testing, setTesting] = useState(false); const [message, setMessage] = useState('STUN route available · 12 ms'); const test = () => { setTesting(true); setMessage('Checking STUN and TURN routes…'); window.setTimeout(() => { setTesting(false); setMessage('STUN route available · 12 ms') }, 1500) }; return <><SettingsSection title="Connection route" label="P2P network"><div className="network-status"><span className={`network-led ${testing ? 'is-testing' : ''}`} /><div><strong>{testing ? 'Checking route' : 'Connected directly'}</strong><small>{message}</small></div><span className="mono-label">STUN</span></div><div className="network-metrics"><div><span>Latency</span><strong>12 ms</strong></div><div><span>Packet loss</span><strong>0.0%</strong></div><div><span>Relay</span><strong>Standby</strong></div></div><button className="secondary-button" onClick={test}>{testing ? 'Testing…' : 'Test connection'}</button></SettingsSection><SettingsSection title="Resilience" label="Recovery"><div className="toggle-row"><div><strong>Auto reconnect</strong><small>Restore the session after a brief network loss.</small></div><button className={`toggle ${autoReconnect ? 'is-on' : ''}`} aria-label="Toggle automatic reconnect" aria-pressed={autoReconnect} onClick={() => setAutoReconnect(!autoReconnect)}><span /></button></div><div className="toggle-row"><div><strong>Adaptive quality</strong><small>Adjust bitrate when the connection changes.</small></div><button className={`toggle ${adaptive ? 'is-on' : ''}`} aria-label="Toggle adaptive quality" aria-pressed={adaptive} onClick={() => setAdaptive(!adaptive)}><span /></button></div><div className="toggle-row"><div><strong>TURN fallback</strong><small>Use relay only when direct P2P cannot connect.</small></div><button className={`toggle ${relayFallback ? 'is-on' : ''}`} aria-label="Toggle TURN fallback" aria-pressed={relayFallback} onClick={() => setRelayFallback(!relayFallback)}><span /></button></div></SettingsSection></> }
+function NetworkSettings() { const [autoReconnect, setAutoReconnect] = useState(true); const [adaptive, setAdaptive] = useState(true); const [relayFallback, setRelayFallback] = useState(true); const [testing, setTesting] = useState(false); const [message, setMessage] = useState('Connection test not run.'); const test = () => { setTesting(true); setMessage('Checking network route…'); window.setTimeout(() => { setTesting(false); setMessage('Network route check complete.') }, 1500) }; return <><SettingsSection title="Connection route" label="P2P network"><div className="network-status"><span className={`network-led ${testing ? 'is-testing' : ''}`} /><div><strong>{testing ? 'Checking route' : 'Route status unavailable'}</strong><small>{message}</small></div><span className="mono-label">—</span></div><div className="network-metrics"><div><span>Latency</span><strong>—</strong></div><div><span>Packet loss</span><strong>—</strong></div><div><span>Relay</span><strong>—</strong></div></div><button className="secondary-button" onClick={test}>{testing ? 'Testing…' : 'Test connection'}</button></SettingsSection><SettingsSection title="Resilience" label="Recovery"><div className="toggle-row"><div><strong>Auto reconnect</strong><small>Restore the session after a brief network loss.</small></div><button className={`toggle ${autoReconnect ? 'is-on' : ''}`} aria-label="Toggle auto reconnect" aria-pressed={autoReconnect} onClick={() => setAutoReconnect(!autoReconnect)}><span /></button></div><div className="toggle-row"><div><strong>Adaptive quality</strong><small>Adjust bitrate when the connection changes.</small></div><button className={`toggle ${adaptive ? 'is-on' : ''}`} aria-label="Toggle adaptive quality" aria-pressed={adaptive} onClick={() => setAdaptive(!adaptive)}><span /></button></div><div className="toggle-row"><div><strong>TURN fallback</strong><small>Use relay only when direct P2P cannot connect.</small></div><button className={`toggle ${relayFallback ? 'is-on' : ''}`} aria-label="Toggle TURN fallback" aria-pressed={relayFallback} onClick={() => setRelayFallback(!relayFallback)}><span /></button></div></SettingsSection></> }
 
 function ShortcutsSettings() { const [shortcuts, setShortcuts] = useState({ mute: 'M', push: 'Space', share: 'S', leave: 'Esc' }); const [saved, setSaved] = useState(false); const update = (key: keyof typeof shortcuts, value: string) => setShortcuts({ ...shortcuts, [key]: value }); return <><SettingsSection title="Call controls" label="Keyboard"><div className="shortcut-list">{([['mute', 'Mute microphone'], ['push', 'Push to talk'], ['share', 'Share screen'], ['leave', 'Leave session']] as const).map(([key, label]) => <label className="shortcut-row" key={key}><span>{label}</span><input aria-label={`${label} shortcut`} value={shortcuts[key]} onChange={(event) => update(key, event.target.value)} onFocus={(event) => event.currentTarget.select()} /></label>)}</div><div className="shortcut-actions"><span className="form-hint">Shortcuts apply when the app is focused.</span><button className="secondary-button" onClick={() => { setShortcuts({ mute: 'M', push: 'Space', share: 'S', leave: 'Esc' }); setSaved(false) }}>Reset</button><button className="primary-button" onClick={() => { localStorage.setItem('signal.shortcuts', JSON.stringify(shortcuts)); setSaved(true) }}>{saved ? 'Saved' : 'Save shortcuts'}</button></div></SettingsSection><SettingsSection title="Global access" label="Desktop"><div className="settings-placeholder"><span className="led-display"><i /><i /><i /></span><div><strong>Global shortcuts will be registered by Tauri.</strong><small>The bindings above are ready for native desktop integration.</small></div></div></SettingsSection></> }
 
@@ -570,7 +551,7 @@ function CallView({ room, muted, sharing, onMute, onShare, onLeave, onInvite }: 
     } catch { setMediaStatus('Screen sharing was cancelled') }
   }
 
-  return <section className="call-view"><div className="call-header"><div><p className="eyebrow">Room {room.code}</p><h1>{room.name}</h1></div><div className="call-header-meta"><span className="connection-pill" aria-label="Connected"><span className="status-led" /><span className="sr-only">Connected</span></span><span className="media-status">{mediaStatus}</span><span className="participant-count">{String(participantCount).padStart(2, '0')} participants</span><button className="icon-button" aria-label="Room actions"><Icon name="more" /></button></div></div><div className={`screen-stage ${sharing ? 'is-sharing' : ''}`}><div className="stage-grid" /><div className="stage-center">{sharing ? <><span className="screen-icon"><Icon name="screen" size={30} /></span><span className="stage-kicker">SCREEN SHARE</span><strong>João is sharing a screen</strong><span>1080p · 30 FPS · Excellent quality</span></> : <><span className="room-symbol large">{room.name.slice(0, 2).toUpperCase()}</span><strong>Ready to share the room</strong><span>Start screen sharing when you need the focus.</span></>}</div><div className="stage-topline"><span>{sharing ? 'SCREEN SHARE' : 'VOICE SESSION'}</span><span>{sharing ? 'Fit · 1080p · 30 FPS' : 'No content shared'}</span></div></div><div className="participant-strip">{people.map((person, index) => <div className={`participant ${index === 0 || index === 3 ? 'is-speaking' : ''}`} key={person.name} aria-label={`${person.name}, ${index === 0 || index === 3 ? 'speaking' : index === 1 ? 'muted' : 'idle'}`}><span className={`avatar avatar-${person.tone}`}>{person.initials}</span><div><strong>{person.name.split(' ')[0]}</strong><small>{index === 0 || index === 3 ? 'Speaking' : index === 1 ? 'Muted' : 'Idle'}</small></div><span className={`signal-bars ${index === 0 || index === 3 ? 'active' : ''}`}><i /><i /><i /><i /></span></div>)}</div><div className="call-controls"><ControlButton icon="mic" label={muted ? 'Unmute' : 'Mute'} active={!muted} onClick={onMute} /><ControlButton icon="headphones" label="Output" /><ControlButton icon="screen" label={sharing ? 'Stop sharing' : 'Share screen'} active={sharing} onClick={toggleScreenShare} /><ControlButton icon="invite" label="Invite" onClick={onInvite} /><button className="leave-button" aria-label="Leave call" onClick={onLeave}><Icon name="leave" size={17} /><span>Leave</span></button></div></section>
+  return <section className="call-view"><div className="call-header"><div><p className="eyebrow">Room {room.code}</p><h1>{room.name}</h1></div><div className="call-header-meta"><span className="connection-pill" aria-label="Connected"><span className="status-led" /><span className="sr-only">Connected</span></span><span className="media-status">{mediaStatus}</span><span className="participant-count">{String(participantCount).padStart(2, '0')} participants</span><button className="icon-button" aria-label="Room actions"><Icon name="more" /></button></div></div><div className={`screen-stage ${sharing ? 'is-sharing' : ''}`}><div className="stage-grid" /><div className="stage-center">{sharing ? <><span className="screen-icon"><Icon name="screen" size={30} /></span><span className="stage-kicker">SCREEN SHARE</span><strong>Screen sharing active</strong><span>Live media stream</span></> : <><span className="room-symbol large">{room.name.slice(0, 2).toUpperCase()}</span><strong>Ready to share the room</strong><span>Start screen sharing when you need the focus.</span></>}</div><div className="stage-topline"><span>{sharing ? 'SCREEN SHARE' : 'VOICE SESSION'}</span><span>{sharing ? 'Live media stream' : 'No content shared'}</span></div></div><div className="participant-strip" aria-live="polite"><div className="participant"><strong>{participantCount} {participantCount === 1 ? 'participant' : 'participants'} connected</strong><small>Live room presence</small><span className="signal-bars active"><i /><i /><i /><i /></span></div></div><div className="call-controls"><ControlButton icon="mic" label={muted ? 'Unmute' : 'Mute'} active={!muted} onClick={onMute} /><ControlButton icon="headphones" label="Output" /><ControlButton icon="screen" label={sharing ? 'Stop sharing' : 'Share screen'} active={sharing} onClick={toggleScreenShare} /><ControlButton icon="invite" label="Invite" onClick={onInvite} /><button className="leave-button" aria-label="Leave call" onClick={onLeave}><Icon name="leave" size={17} /><span>Leave</span></button></div></section>
 }
 
 function ControlButton({ icon, label, active, onClick }: { icon: IconName; label: string; active?: boolean; onClick?: () => void }) { return <button className={`control-button ${active ? 'active' : ''}`} aria-label={label} onClick={onClick}><Icon name={icon} size={18} /><span>{label}</span></button> }
