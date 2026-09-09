@@ -124,8 +124,11 @@ h3 { color: var(--text); font-size: 14px; font-weight: 500; }
 .home-recents { width: min(100%, 500px); margin: 100px auto 0; }
 .home-section-label { padding-bottom: 10px; color: var(--text-faint); font-family: var(--mono); font-size: 9px; letter-spacing: .12em; text-transform: uppercase; }
 .home-recent-list { border-top: 1px solid var(--line); }
-.home-recent-row { display: flex; width: 100%; align-items: center; justify-content: space-between; border: 0; border-bottom: 1px solid var(--line); color: var(--text); background: transparent; padding: 14px 2px; text-align: left; }
+.home-recent-row-wrap { display: flex; align-items: center; border-bottom: 1px solid var(--line); }
+.home-recent-row { display: flex; min-width: 0; width: 100%; align-items: center; justify-content: space-between; border: 0; color: var(--text); background: transparent; padding: 14px 2px; text-align: left; }
 .home-recent-row:hover { color: var(--amber); }
+.home-recent-remove { display: grid; width: 22px; height: 22px; flex: 0 0 22px; place-items: center; border: 0; color: var(--text-faint); background: transparent; opacity: .6; transition: color .16s, opacity .16s; }
+.home-recent-remove:hover { color: var(--danger); opacity: 1; }
 .home-recent-meta { display: inline-flex; align-items: center; gap: 14px; color: var(--text-faint); }
 .home-recent-meta code { font-family: var(--mono); font-size: 9px; letter-spacing: .08em; }
 .people-page { max-width: 920px; }
