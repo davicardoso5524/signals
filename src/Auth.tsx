@@ -3,7 +3,7 @@ import type { Session, User } from '@supabase/supabase-js'
 import { authRedirectUrl, Profile, supabase } from './lib/supabase'
 
 type AuthMode = 'login' | 'register' | 'forgot' | 'recovery'
-type AuthContextValue = { session: Session | null; user: User | null; profile: Profile | null; loading: boolean; signOut: () => Promise<void> }
+type AuthContextValue = { session: Session | null; user: User | null; profile: Profile | null; profileLoading: boolean; loading: boolean; signOut: () => Promise<void> }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
@@ -119,6 +119,7 @@ function AuthForm({ initialMode = 'login', onRecoveryComplete }: { initialMode?:
 export function AuthGate({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
+  const [profileLoading, setProfileLoading] = useState(true)
   const [loading, setLoading] = useState(true)
   const [recovering, setRecovering] = useState(false)
   useEffect(() => {
@@ -129,14 +130,19 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }, [])
   useEffect(() => {
     let cancelled = false
-    if (!supabase || !session?.user) { setProfile(null); return }
+    if (!supabase || !session?.user) { setProfile(null); setProfileLoading(false); return }
+    setProfileLoading(true)
     setProfile(null)
-    supabase.from('profiles').select('*').eq('id', session.user.id).maybeSingle().then(({ data }) => {
-      if (!cancelled) setProfile(data as Profile | null)
-    })
+    void (async () => {
+      try {
+        const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).maybeSingle()
+        if (!cancelled) setProfile(data as Profile | null)
+      } catch { /* session metadata remains available as a fallback */ }
+      finally { if (!cancelled) setProfileLoading(false) }
+    })()
     return () => { cancelled = true }
   }, [session?.user?.id])
-  const value = useMemo(() => ({ session, user: session?.user || null, profile, loading, signOut: async () => { setProfile(null); await supabase?.auth.signOut() } }), [session, profile, loading])
+  const value = useMemo(() => ({ session, user: session?.user || null, profile, profileLoading, loading, signOut: async () => { setProfile(null); await supabase?.auth.signOut() } }), [session, profile, profileLoading, loading])
   if (loading) return <main className="auth-shell"><div className="auth-loading">SIGNAL<span className="status-led is-busy" /></div></main>
   if (!session) return <AuthContext.Provider value={value}><AuthForm /></AuthContext.Provider>
   if (recovering) return <AuthContext.Provider value={value}><AuthForm initialMode="recovery" onRecoveryComplete={() => setRecovering(false)} /></AuthContext.Provider>
