@@ -410,7 +410,7 @@ body { overflow: hidden; }
 .sidebar-account-actions { display: flex; align-items: center; gap: 5px; }
 .logout-button { display: grid; width: 30px; height: 30px; place-items: center; border: 0; color: var(--text-faint); background: transparent; font-family: var(--mono); font-size: 15px; transform: rotate(180deg); }
 .logout-button:hover { color: var(--amber); }
-.brand-mark { height: 48px; justify-content: flex-start; gap: 12px; padding: 0 10px; font-family: var(--mono); font-size: 12px; font-weight: 500; letter-spacing: .22em; }
+.brand-mark { position: relative; top: 12px; height: 48px; justify-content: flex-start; gap: 12px; padding: 0 10px; font-family: var(--mono); font-size: 12px; font-weight: 500; letter-spacing: .22em; }
 .brand-mark span { color: var(--text-primary); }
 .brand-mark i { display: inline-block; width: 9px; height: 9px; flex: 0 0 9px; transform: rotate(45deg); background: var(--accent); }
 .brand-mark img { display: none; }
