@@ -3,6 +3,7 @@ import { supabase } from './supabase'
 
 export type RoomRecord = { id: string; owner_id: string; name: string; code: string; kind: 'quick' | 'persistent'; access: 'invite' | 'password' | 'request'; created_at: string; member_count?: number }
 export type MessageRecord = { id: string; room_id: string; author_id: string; content: string; created_at: string; author?: { username: string; display_name: string } | null }
+export type RoomMemberRecord = { user_id: string; username: string; display_name: string; avatar_url: string | null; joined_at: string }
 
 export async function createRoom(input: Pick<RoomRecord, 'name' | 'code' | 'kind' | 'access'>, userId: string) {
   if (!supabase) return null
@@ -17,6 +18,38 @@ export async function joinRoomByCode(roomCode: string) {
   const { data, error } = await supabase.rpc('join_signal_room_by_code', { room_code: roomCode.trim() }).single()
   if (error) throw error
   return data as RoomRecord
+}
+
+export async function listRoomMembers(roomId: string) {
+  if (!supabase) return [] as RoomMemberRecord[]
+  const { data, error } = await supabase.rpc('list_signal_room_members', { target_room_id: roomId })
+  if (error) throw error
+  return (data || []) as RoomMemberRecord[]
+}
+
+export async function renameRoom(roomId: string, name: string) {
+  if (!supabase) return null
+  const { data, error } = await supabase.rpc('rename_signal_room', { target_room_id: roomId, new_name: name }).single()
+  if (error) throw error
+  return data as RoomRecord
+}
+
+export async function deleteRoom(roomId: string) {
+  if (!supabase) return
+  const { error } = await supabase.rpc('delete_signal_room', { target_room_id: roomId })
+  if (error) throw error
+}
+
+export async function leaveRoom(roomId: string) {
+  if (!supabase) return
+  const { error } = await supabase.rpc('leave_signal_room', { target_room_id: roomId })
+  if (error) throw error
+}
+
+export async function removeRoomMember(roomId: string, userId: string) {
+  if (!supabase) return
+  const { error } = await supabase.rpc('remove_signal_room_member', { target_room_id: roomId, target_user_id: userId })
+  if (error) throw error
 }
 
 export async function listRooms() {

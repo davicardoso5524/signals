@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { RealtimeRoom } from './lib/realtime'
 import { AuthGate, useAuth } from './Auth'
-import { createRoom as createRoomInSupabase, joinRoomByCode, listMessages, listRooms, sendRoomMessage, subscribeToRoomMessages } from './lib/rooms'
+import { createRoom as createRoomInSupabase, deleteRoom, joinRoomByCode, leaveRoom, listMessages, listRoomMembers, listRooms, removeRoomMember, renameRoom, sendRoomMessage, subscribeToRoomMessages, type RoomMemberRecord } from './lib/rooms'
 import { supabase } from './lib/supabase'
 import { UpdateGate } from './lib/updater'
 import { createGroup, findProfiles, getOrCreateDirect, listConversations, listMessages as listConversationMessages, listParticipants, sendMessage, subscribeToMessages, type Conversation, type Message, type Profile } from './lib/conversations'
@@ -10,14 +10,14 @@ type View = 'Home' | 'People' | 'Rooms' | 'Settings'
 type IconName = 'home' | 'people' | 'rooms' | 'settings' | 'search' | 'plus' | 'arrow' | 'copy' | 'mic' | 'headphones' | 'screen' | 'invite' | 'leave' | 'more' | 'close' | 'eye' | 'sun' | 'moon' | 'logout'
 type Theme = 'dark' | 'light'
 type RoomMessage = { id: string; roomId: string; authorId: string; authorName: string; username: string; content: string; createdAt: string }
-type Room = { id: string; name: string; meta: string; code: string; state: string; live: boolean; memberCount: number; participantCount: number; kind: 'quick' | 'persistent'; access: 'invite' | 'password' | 'request'; unread: number }
+type Room = { id: string; ownerId: string; name: string; meta: string; code: string; state: string; live: boolean; memberCount: number; participantCount: number; kind: 'quick' | 'persistent'; access: 'invite' | 'password' | 'request'; unread: number }
 type Person = { id: string; initials: string; name: string; username: string; tone: string; active: boolean; role?: string }
 
 const people: Person[] = []
 const devLog = (scope: string, message: string) => { if (import.meta.env.DEV) console.info(`[${scope}] ${message}`) }
 
-function mapRoom(record: { id: string; name: string; code: string; kind: Room['kind']; access: Room['access']; member_count?: number }): Room {
-  return { id: record.id, name: record.name, meta: `${record.member_count || 0} people`, code: record.code, state: 'Ready', live: false, memberCount: record.member_count || 0, participantCount: 0, kind: record.kind, access: record.access, unread: 0 }
+function mapRoom(record: { id: string; owner_id?: string; name: string; code: string; kind: Room['kind']; access: Room['access']; member_count?: number }): Room {
+  return { id: record.id, ownerId: record.owner_id || '', name: record.name, meta: `${record.member_count || 0} people`, code: record.code, state: 'Ready', live: false, memberCount: record.member_count || 0, participantCount: 0, kind: record.kind, access: record.access, unread: 0 }
 }
 
 function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
@@ -99,7 +99,7 @@ function SignalWorkspace() {
 
   const createRoom = async () => {
     if (!roomName.trim() || (roomAccess === 'password' && !roomPassword)) return
-    const room: Room = { id: crypto.randomUUID?.() || `room-${Date.now()}`, name: roomName.trim() || 'Untitled room', meta: '0 people', code: generateRoomCode(), state: 'Ready', live: false, memberCount: 0, participantCount: 0, kind: roomKind, access: roomAccess, unread: 0 }
+    const room: Room = { id: crypto.randomUUID?.() || `room-${Date.now()}`, ownerId: user?.id || '', name: roomName.trim() || 'Untitled room', meta: '0 people', code: generateRoomCode(), state: 'Ready', live: false, memberCount: 0, participantCount: 0, kind: roomKind, access: roomAccess, unread: 0 }
     if (supabase && user) {
       try {
         const saved = await createRoomInSupabase({ name: room.name, code: room.code, kind: room.kind, access: room.access }, user.id)
@@ -176,7 +176,7 @@ function SignalWorkspace() {
           <div className="content-scroll">
             {view === 'Home' && <MinimalHomeView recentRooms={hasRoomHistory ? roomList.slice(0, 3) : []} rooms={roomList.filter((room) => room.kind === 'persistent').slice(0, 4)} onCreate={() => setShowCreate(true)} onJoin={joinRoom} onOpenRoom={(room) => { setRoomDetail(room); setView('Rooms') }} joinError={joinError} />}
             {view === 'People' && (conversationDetail ? <ConversationView conversation={conversationDetail} userId={user?.id} onBack={() => setConversationDetail(null)} onChanged={refreshConversations} /> : <MinimalPeopleView userId={user?.id} conversations={conversations} onOpen={openConversation} onChanged={refreshConversations} />)}
-            {view === 'Rooms' && (roomDetail ? <RoomDetailsView room={roomDetail} userId={user?.id} authorName={profile?.display_name || user?.email || 'SIGNAL user'} username={profile?.username || 'account'} onBack={() => setRoomDetail(null)} callActive={inCall && activeRoom?.id === roomDetail.id} onStartCall={() => { setActiveRoom(roomDetail); setInCall(true); setShowCall(false) }} onOpenCall={() => setShowCall(true)} onCopy={() => copyCode(roomDetail)} copied={copied} /> : <RoomsView roomList={roomList} onCreate={() => setShowCreate(true)} onOpenRoom={(room) => setRoomDetail(room)} onEnterCall={(room) => { setActiveRoom(room); setInCall(true); setShowCall(true) }} />)}
+            {view === 'Rooms' && (roomDetail ? <RoomDetailsView room={roomDetail} userId={user?.id} authorName={profile?.display_name || user?.email || 'SIGNAL user'} username={profile?.username || 'account'} onBack={() => setRoomDetail(null)} callActive={inCall && activeRoom?.id === roomDetail.id} onStartCall={() => { setActiveRoom(roomDetail); setInCall(true); setShowCall(false) }} onOpenCall={() => setShowCall(true)} onCopy={() => copyCode(roomDetail)} copied={copied} onRenamed={(updated) => { setRoomDetail(updated); setRoomList((current) => current.map((item) => item.id === updated.id ? updated : item)); setActiveRoom((current) => current?.id === updated.id ? updated : current) }} onExited={() => { setRoomDetail(null); setActiveRoom(null); setInCall(false); setShowCall(false); setRoomList((current) => current.filter((item) => item.id !== roomDetail.id)); setView('Rooms') }} /> : <RoomsView roomList={roomList} onCreate={() => setShowCreate(true)} onOpenRoom={(room) => setRoomDetail(room)} onEnterCall={(room) => { setActiveRoom(room); setInCall(true); setShowCall(true) }} />)}
             {view === 'Settings' && <SettingsView />}
           </div>
         )}
@@ -269,11 +269,19 @@ function LegacyCreateRoomModal({ roomName, setRoomName, roomKind, setRoomKind, r
   return <Modal title="Create room" onClose={onClose}><form onSubmit={(event) => { event.preventDefault(); onSubmit() }} className="create-room-form"><label className="form-label" htmlFor="room-name">Name</label><input id="room-name" className="text-input" value={roomName} onChange={(event) => setRoomName(event.target.value)} autoFocus /><fieldset className="room-choice-group"><legend>Type</legend><label className={`room-choice ${roomKind === 'quick' ? 'is-selected' : ''}`}><input type="radio" checked={roomKind === 'quick'} onChange={() => setRoomKind('quick')} /> <span><strong>Quick room</strong><small>Temporary. Ends when everyone leaves.</small></span></label><label className={`room-choice ${roomKind === 'persistent' ? 'is-selected' : ''}`}><input type="radio" checked={roomKind === 'persistent'} onChange={() => setRoomKind('persistent')} /> <span><strong>Persistent room</strong><small>Stays available in Rooms.</small></span></label></fieldset><fieldset className="room-choice-group"><legend>Access</legend><label className={`room-choice ${roomAccess === 'invite' ? 'is-selected' : ''}`}><input type="radio" checked={roomAccess === 'invite'} onChange={() => setRoomAccess('invite')} /> <span><strong>Anyone with invite</strong><small>Anyone with the code or link can enter.</small></span></label><label className={`room-choice ${roomAccess === 'password' ? 'is-selected' : ''}`}><input type="radio" checked={roomAccess === 'password'} onChange={() => setRoomAccess('password')} /> <span><strong>Password protected</strong><small>Invite and password are both required.</small></span></label><label className={`room-choice ${roomAccess === 'request' ? 'is-selected' : ''}`}><input type="radio" checked={roomAccess === 'request'} onChange={() => setRoomAccess('request')} /> <span><strong>Ask to join</strong><small>The owner approves each request.</small></span></label></fieldset>{roomAccess === 'password' && <div className="room-password-fields"><label className="form-label" htmlFor="room-password">Password</label><input id="room-password" className="text-input" type="password" value={roomPassword} onChange={(event) => setRoomPassword(event.target.value)} autoComplete="new-password" /><label className="form-label" htmlFor="room-password-confirm">Confirm password</label><input id="room-password-confirm" className="text-input" type="password" value={roomPasswordConfirm} onChange={(event) => setRoomPasswordConfirm(event.target.value)} autoComplete="new-password" /></div>}{roomFormError && <p className="form-error">{roomFormError}</p>}<button className="primary-button full-width" type="submit">Create room <Icon name="arrow" size={16} /></button></form></Modal>
 }
 
-function RoomDetailsView({ room, userId, authorName, username, callActive, onBack, onStartCall, onOpenCall, onCopy, copied }: { room: Room; userId?: string; authorName: string; username: string; callActive: boolean; onBack: () => void; onStartCall: () => void; onOpenCall: () => void; onCopy: () => void; copied: boolean }) {
+function RoomDetailsView({ room, userId, authorName, username, callActive, onBack, onStartCall, onOpenCall, onCopy, copied, onRenamed, onExited }: { room: Room; userId?: string; authorName: string; username: string; callActive: boolean; onBack: () => void; onStartCall: () => void; onOpenCall: () => void; onCopy: () => void; copied: boolean; onRenamed: (room: Room) => void; onExited: () => void }) {
   const [messages, setMessages] = useState<RoomMessage[]>([])
   const [draft, setDraft] = useState('')
+  const [members, setMembers] = useState<RoomMemberRecord[]>([])
   const [showMembers, setShowMembers] = useState(false)
-  const members: { name: string; username: string; initials: string; tone: string }[] = []
+  const [showActions, setShowActions] = useState(false)
+  const [renameOpen, setRenameOpen] = useState(false)
+  const [renameValue, setRenameValue] = useState(room.name)
+  const [confirmAction, setConfirmAction] = useState<'delete' | 'leave' | null>(null)
+  const [actionError, setActionError] = useState('')
+  const [actionBusy, setActionBusy] = useState(false)
+  const isOwner = Boolean(userId && room.ownerId === userId)
+
   useEffect(() => {
     if (!supabase || !userId) return
     let mounted = true
@@ -281,18 +289,42 @@ function RoomDetailsView({ room, userId, authorName, username, callActive, onBac
       if (!mounted) return
       setMessages(records.map((message) => ({ id: message.id, roomId: message.room_id, authorId: message.author_id, authorName: message.author?.display_name || 'SIGNAL user', username: message.author?.username || 'account', content: message.content, createdAt: new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) })))
     }).catch(() => undefined)
+    listRoomMembers(room.id).then((records) => { if (mounted) setMembers(records) }).catch(() => undefined)
     const unsubscribe = subscribeToRoomMessages(room.id, (message) => {
       if (!mounted) return
       setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, { id: message.id, roomId: message.room_id, authorId: message.author_id, authorName: message.author?.display_name || 'SIGNAL user', username: message.author?.username || 'account', content: message.content, createdAt: new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }])
     })
     return () => { mounted = false; unsubscribe() }
   }, [room.id, userId])
+
   const sendMessage = async () => {
     const content = draft.trim(); if (!content) return
     if (supabase && userId) { try { await sendRoomMessage(room.id, userId, content); setDraft(''); return } catch { return } }
     if (!supabase || !userId) return
   }
-  return <section className="page room-chat-page"><button className="text-button room-back" onClick={onBack}><Icon name="arrow" size={15} />Rooms</button><div className="room-chat-header"><div><p className="eyebrow">Room</p><h1>{room.name}{(room.unread || 0) > 0 && <span className="room-unread-dot" />}</h1></div><div className="room-chat-actions">{callActive || room.live ? <span className="room-call-state"><span className="live-dot" />{callActive ? 'Your call is live' : `${room.participantCount} in call`}</span> : null}<button className="secondary-button members-button" onClick={() => setShowMembers(true)}>{room.memberCount || members.length} members</button><button className="primary-button" onClick={callActive ? onOpenCall : onStartCall}>{callActive ? 'Open call' : room.live ? 'Join call' : 'Start call'} <Icon name="arrow" size={15} /></button><button className="more-button" aria-label="Room actions"><Icon name="more" size={16} /></button></div></div><div className="room-detail-code"><span><small>Room code</small><code>{room.code}</code></span><button className="text-button" onClick={onCopy}>{copied ? 'Copied' : 'Copy code'} <Icon name="copy" size={14} /></button></div><div className="room-chat-layout"><div className="room-chat-history" aria-label={`Chat in ${room.name}`}>{messages.length ? messages.map((message, index) => { const previous = messages[index - 1]; const grouped = previous?.authorId === message.authorId; return <div className={`chat-message ${grouped ? 'is-grouped' : ''}`} key={message.id}>{!grouped && <div className="chat-message-meta"><strong>{message.authorName}</strong><span>@{message.username}</span><time>{message.createdAt}</time></div>}<p>{message.content}</p></div> }) : <div className="chat-empty"><p>No messages yet.</p><small>Start the conversation.</small></div>}</div><form className="chat-composer" onSubmit={(event) => { event.preventDefault(); sendMessage() }}><textarea aria-label={`Message ${room.name}`} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage() } }} placeholder={`Message ${room.name}…`} rows={1} /><button className="composer-send" type="submit" aria-label="Send message" disabled={!draft.trim()}><Icon name="arrow" size={17} /></button></form></div>{showMembers && <Modal title="Members" onClose={() => setShowMembers(false)}><div className="room-members-modal">{members.slice(0, room.memberCount || members.length).map((member) => <div className="room-member-row" key={member.username}><span className={`avatar avatar-${member.tone}`}>{member.initials}</span><span><strong>{member.name}</strong><small>@{member.username}</small></span></div>)}</div></Modal>}</section>
+
+  const submitRename = async () => {
+    if (!renameValue.trim()) return
+    setActionBusy(true); setActionError('')
+    try { const updated = await renameRoom(room.id, renameValue.trim()); if (updated) { onRenamed({ ...room, name: updated.name, meta: `${room.memberCount} people` }); setRenameOpen(false); setShowActions(false) } }
+    catch { setActionError('Couldn’t rename the room. Try again.') }
+    finally { setActionBusy(false) }
+  }
+
+  const submitRoomAction = async () => {
+    if (!confirmAction) return
+    setActionBusy(true); setActionError('')
+    try { if (confirmAction === 'delete') await deleteRoom(room.id); else await leaveRoom(room.id); onExited() }
+    catch { setActionError(confirmAction === 'delete' ? 'Couldn’t delete the room. Try again.' : 'Couldn’t leave the room. Try again.'); setActionBusy(false) }
+  }
+
+  const removeMember = async (member: RoomMemberRecord) => {
+    if (!isOwner || !window.confirm(`Remove ${member.display_name} from this room?`)) return
+    try { await removeRoomMember(room.id, member.user_id); setMembers((current) => current.filter((item) => item.user_id !== member.user_id)) }
+    catch { setActionError('Couldn’t remove that member. Try again.') }
+  }
+
+  return <section className="page room-chat-page"><button className="text-button room-back" onClick={onBack}><Icon name="arrow" size={15} />Rooms</button><div className="room-chat-header"><div><p className="eyebrow">Room</p><h1>{room.name}{(room.unread || 0) > 0 && <span className="room-unread-dot" />}</h1><div className="room-detail-code"><span><small>Room code</small><code>{room.code}</code></span><button className="text-button" onClick={onCopy}>{copied ? 'Copied' : 'Copy code'} <Icon name="copy" size={14} /></button></div></div><div className="room-chat-actions">{callActive || room.live ? <span className="room-call-state"><span className="live-dot" />{callActive ? 'Your call is live' : `${room.participantCount} in call`}</span> : null}<button className="secondary-button members-button" onClick={() => setShowMembers(true)}>{members.length || room.memberCount} members</button><button className="primary-button" onClick={callActive ? onOpenCall : onStartCall}>{callActive ? 'Open call' : room.live ? 'Join call' : 'Start call'} <Icon name="arrow" size={15} /></button><div className="room-actions-wrap"><button className="more-button" aria-label="Room actions" aria-expanded={showActions} onClick={() => { setShowActions((current) => !current); setActionError('') }}><Icon name="more" size={16} /></button>{showActions && <div className="room-actions-menu" role="menu">{isOwner && <button type="button" onClick={() => { setRenameValue(room.name); setRenameOpen(true); setShowActions(false) }}>Edit room name</button>}{isOwner ? <button type="button" className="is-danger" onClick={() => { setConfirmAction('delete'); setShowActions(false) }}>Delete room</button> : <button type="button" className="is-danger" onClick={() => { setConfirmAction('leave'); setShowActions(false) }}>Leave room</button>}</div>}</div></div></div><div className="room-chat-layout"><div className="room-chat-history" aria-label={`Chat in ${room.name}`}>{messages.length ? messages.map((message, index) => { const previous = messages[index - 1]; const grouped = previous?.authorId === message.authorId; return <div className={`chat-message ${grouped ? 'is-grouped' : ''}`} key={message.id}>{!grouped && <div className="chat-message-meta"><strong>{message.authorName}</strong><span>@{message.username}</span><time>{message.createdAt}</time></div>}<p>{message.content}</p></div> }) : <div className="chat-empty"><p>No messages yet.</p><small>Start the conversation.</small></div>}</div><form className="chat-composer" onSubmit={(event) => { event.preventDefault(); void sendMessage() }}><textarea aria-label={`Message ${room.name}`} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void sendMessage() } }} placeholder={`Message ${room.name}…`} rows={1} /><button className="composer-send" type="submit" aria-label="Send message" disabled={!draft.trim()}><Icon name="arrow" size={17} /></button></form></div>{showMembers && <Modal title="Members" onClose={() => setShowMembers(false)}><div className="room-members-modal">{members.map((member) => <div className="room-member-row" key={member.user_id}><span className="avatar avatar-jade">{initialsFor(member.display_name)}</span><span><strong>{member.display_name}</strong><small>@{member.username}</small></span>{isOwner && member.user_id !== userId && <button type="button" className="room-member-remove" onClick={() => void removeMember(member)}>Remove</button>}</div>)}{actionError && <p className="form-error" role="alert">{actionError}</p>}</div></Modal>}{renameOpen && <Modal title="Edit room name" onClose={() => setRenameOpen(false)}><label className="form-label" htmlFor="rename-room">Room name</label><input id="rename-room" className="text-input" value={renameValue} onChange={(event) => setRenameValue(event.target.value)} maxLength={80} autoFocus />{actionError && <p className="form-error" role="alert">{actionError}</p>}<div className="compact-modal-footer"><button type="button" className="secondary-button" onClick={() => setRenameOpen(false)}>Cancel</button><button type="button" className="primary-button" disabled={actionBusy || !renameValue.trim()} onClick={() => void submitRename()}>Save</button></div></Modal>}{confirmAction && <Modal title={confirmAction === 'delete' ? 'Delete room' : 'Leave room'} onClose={() => { if (!actionBusy) setConfirmAction(null) }}><p className="form-hint">{confirmAction === 'delete' ? 'This permanently removes the room and its messages.' : 'You will no longer see this room until you join again with its code.'}</p>{actionError && <p className="form-error" role="alert">{actionError}</p>}<div className="compact-modal-footer"><button type="button" className="secondary-button" disabled={actionBusy} onClick={() => setConfirmAction(null)}>Cancel</button><button type="button" className="primary-button danger-button" disabled={actionBusy} onClick={() => void submitRoomAction()}>{actionBusy ? 'Working…' : confirmAction === 'delete' ? 'Delete room' : 'Leave room'}</button></div></Modal>}</section>
 }
 
 function LegacyRoomDetailsView({ room, onBack, onStartCall, onCopy, copied }: { room: Room; onBack: () => void; onStartCall: () => void; onCopy: () => void; copied: boolean }) {
