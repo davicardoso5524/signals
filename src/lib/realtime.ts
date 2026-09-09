@@ -9,6 +9,7 @@ type RealtimeEvents = {
   peerNames: (peerNames: Record<string, string>) => void
   peerUsers: (peerUsers: Record<string, string>) => void
   remoteAudio: (stream: MediaStream, peerId: string) => void
+  remoteAudioEnded: (peerId: string) => void
   remoteVideo: (stream: MediaStream, peerId: string) => void
 }
 
@@ -149,7 +150,7 @@ export class RealtimeRoom {
       state.remoteStreams.add(stream)
       if (event.track.kind === 'audio') { devLog('WEBRTC', 'remote audio track received', { peerId }); this.events.remoteAudio(stream, peerId) }
       if (event.track.kind === 'video') { devLog('SCREEN', 'remote screen track received', { peerId }); this.events.remoteVideo(stream, peerId) }
-      event.track.onended = () => state.remoteStreams.delete(stream)
+      event.track.onended = () => { state.remoteStreams.delete(stream); if (event.track.kind === 'audio') this.events.remoteAudioEnded(peerId) }
     }
     connection.onconnectionstatechange = () => {
       devLog('WEBRTC', `peer ${peerId} connectionState=${connection.connectionState}`)

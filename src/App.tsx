@@ -567,6 +567,9 @@ function ShortcutsSettings() { const [shortcuts, setShortcuts] = useState({ mute
 function SettingsSection({ title, label, children }: { title: string; label: string; children: React.ReactNode }) { return <section className="settings-section"><div className="settings-section-heading"><div><p className="eyebrow">{label}</p><h2>{title}</h2></div><span className="section-screw" /></div>{children}</section> }
 
 function CallView({ room, localUserId, localName, muted, sharing, onMute, onShare, onLeave, onInvite }: { room: Room; localUserId: string; localName: string; muted: boolean; sharing: boolean; onMute: () => void; onShare: () => void; onLeave: () => void; onInvite: () => void }) {
+  const SPEAKING_THRESHOLD = 0.055
+  const SPEAKING_RELEASE_MS = 300
+  type SpeakingDetector = { source: MediaStreamAudioSourceNode; analyser: AnalyserNode; samples: Uint8Array<ArrayBuffer>; track: MediaStreamTrack; speaking: boolean; silentSince: number | null }
   const localStreamRef = useRef<MediaStream | null>(null)
   const rawMicStreamRef = useRef<MediaStream | null>(null)
   const micContextRef = useRef<AudioContext | null>(null)
@@ -582,10 +585,66 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
   const screenStageRef = useRef<HTMLDivElement | null>(null)
   const [fullscreen, setFullscreen] = useState(false)
   const [showActions, setShowActions] = useState(false)
+  const [speaking, setSpeaking] = useState<Record<string, boolean>>({})
+  const speakingDetectorsRef = useRef(new Map<string, SpeakingDetector>())
+  const speakingTimerRef = useRef<number | null>(null)
+  const speakingContextRef = useRef<AudioContext | null>(null)
+  const mutedRef = useRef(muted)
   const realtimeRef = useRef<RealtimeRoom | null>(null)
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null)
   const [remoteVideo, setRemoteVideo] = useState<MediaStream | null>(null)
   const screenStopHandledRef = useRef(false)
+
+  const removeSpeakingDetector = (key: string) => {
+    const detector = speakingDetectorsRef.current.get(key)
+    if (!detector) return
+    detector.source.disconnect()
+    speakingDetectorsRef.current.delete(key)
+    setSpeaking((current) => current[key] ? { ...current, [key]: false } : current)
+  }
+
+  const addSpeakingDetector = (key: string, stream: MediaStream) => {
+    const track = stream.getAudioTracks()[0]
+    if (!track) return
+    removeSpeakingDetector(key)
+    const context = speakingContextRef.current || micContextRef.current || new AudioContext()
+    speakingContextRef.current = context
+    const source = context.createMediaStreamSource(stream)
+    const analyser = context.createAnalyser()
+    analyser.fftSize = 256
+    source.connect(analyser)
+    speakingDetectorsRef.current.set(key, { source, analyser, samples: new Uint8Array(new ArrayBuffer(analyser.fftSize)), track, speaking: false, silentSince: null })
+  }
+
+  const startSpeakingMonitor = () => {
+    if (speakingTimerRef.current !== null) return
+    const check = () => {
+      const now = performance.now()
+      const changed: Record<string, boolean> = {}
+      speakingDetectorsRef.current.forEach((detector, key) => {
+        detector.analyser.getByteTimeDomainData(detector.samples)
+        const rms = Math.sqrt(detector.samples.reduce((sum, sample) => { const normalized = (sample - 128) / 128; return sum + normalized * normalized }, 0) / detector.samples.length)
+        const shouldSpeak = key === 'local' && mutedRef.current ? false : detector.track.enabled && rms >= SPEAKING_THRESHOLD
+        if (shouldSpeak) detector.silentSince = null
+        else if (detector.speaking && detector.silentSince === null) detector.silentSince = now
+        const nextSpeaking = shouldSpeak || (detector.speaking && detector.silentSince !== null && now - detector.silentSince < SPEAKING_RELEASE_MS)
+        if (nextSpeaking !== detector.speaking) { detector.speaking = nextSpeaking; changed[key] = nextSpeaking }
+      })
+      if (Object.keys(changed).length) setSpeaking((current) => ({ ...current, ...changed }))
+      speakingTimerRef.current = window.setTimeout(check, 80)
+    }
+    speakingTimerRef.current = window.setTimeout(check, 0)
+  }
+
+  const stopSpeakingMonitor = () => {
+    if (speakingTimerRef.current !== null) window.clearTimeout(speakingTimerRef.current)
+    speakingTimerRef.current = null
+    speakingDetectorsRef.current.forEach((detector) => detector.source.disconnect())
+    speakingDetectorsRef.current.clear()
+    setSpeaking({})
+    if (speakingContextRef.current && speakingContextRef.current !== micContextRef.current) void speakingContextRef.current.close()
+    speakingContextRef.current = null
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -600,6 +659,11 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
         const destination = context.createMediaStreamDestination()
         gain.gain.value = Number(localStorage.getItem('signal.audio.inputVolume') || 100) / 100
         source.connect(gain).connect(destination)
+        const analyser = context.createAnalyser()
+        analyser.fftSize = 256
+        source.connect(analyser)
+        speakingDetectorsRef.current.set('local', { source, analyser, samples: new Uint8Array(new ArrayBuffer(analyser.fftSize)), track: stream.getAudioTracks()[0], speaking: false, silentSince: null })
+        startSpeakingMonitor()
         const processedStream = new MediaStream(destination.stream.getAudioTracks())
         rawMicStreamRef.current = stream
         micContextRef.current = context
@@ -609,7 +673,7 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
       } catch { setMediaStatus('Microphone permission needed') }
     }
     prepareMicrophone()
-    return () => { cancelled = true; localStreamRef.current?.getTracks().forEach((track) => track.stop()); rawMicStreamRef.current?.getTracks().forEach((track) => track.stop()); micContextRef.current?.close(); screenStreamRef.current?.getTracks().forEach((track) => track.stop()); realtimeRef.current?.setScreenStream(null) }
+    return () => { cancelled = true; stopSpeakingMonitor(); localStreamRef.current?.getTracks().forEach((track) => track.stop()); rawMicStreamRef.current?.getTracks().forEach((track) => track.stop()); micContextRef.current?.close(); screenStreamRef.current?.getTracks().forEach((track) => track.stop()); realtimeRef.current?.setScreenStream(null) }
   }, [])
 
   useEffect(() => {
@@ -621,6 +685,8 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
       peerNames: (names) => setRemotePeerNames(names),
       peerUsers: (users) => setRemotePeerUsers(users),
       remoteAudio: (stream, peerId) => {
+        addSpeakingDetector(peerId, stream)
+        startSpeakingMonitor()
         const previous = remoteAudioRef.current.get(peerId)
         previous?.pause()
         if (previous) previous.srcObject = null
@@ -631,6 +697,13 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
         audio.dataset.peerId = peerId
         remoteAudioRef.current.set(peerId, audio)
         audio.play().catch(() => undefined)
+      },
+      remoteAudioEnded: (peerId) => {
+        removeSpeakingDetector(peerId)
+        const audio = remoteAudioRef.current.get(peerId)
+        audio?.pause()
+        if (audio) audio.srcObject = null
+        remoteAudioRef.current.delete(peerId)
       },
       remoteVideo: (stream) => setRemoteVideo(stream),
     })
@@ -649,9 +722,20 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
       setRemotePeerIds([])
       setRemotePeerNames({})
       setRemotePeerUsers({})
+      stopSpeakingMonitor()
       setRemoteVideo(null)
     }
   }, [room.code])
+
+  useEffect(() => {
+    mutedRef.current = muted
+    if (muted) setSpeaking((current) => current.local ? { ...current, local: false } : current)
+  }, [muted])
+
+  useEffect(() => {
+    const activePeerIds = new Set(remotePeerIds)
+    speakingDetectorsRef.current.forEach((_detector, key) => { if (key !== 'local' && !activePeerIds.has(key)) removeSpeakingDetector(key) })
+  }, [remotePeerIds])
 
   useEffect(() => {
     if (!remoteVideoRef.current) return
@@ -714,7 +798,7 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
   }
 
   const uniqueRemotePeerIds = remotePeerIds.filter((peerId, index, ids) => ids.findIndex((candidate) => (remotePeerUsers[candidate] || candidate) === (remotePeerUsers[peerId] || peerId)) === index)
-  const participantTiles = <div className="participant-tiles"><div className="participant-tile"><span className="participant-tile-avatar">{initialsFor(localName)}</span><strong>{localName}</strong><small>You</small></div>{uniqueRemotePeerIds.map((peerId, index) => { const name = remotePeerNames[peerId] || `Participant ${index + 1}`; return <div className="participant-tile" key={peerId}><span className="participant-tile-avatar">{initialsFor(name)}</span><strong>{name}</strong><small>Connected</small></div> })}</div>
+  const participantTiles = <div className="participant-tiles"><div className={`participant-tile ${speaking.local ? 'is-speaking' : ''}`}><span className="participant-tile-avatar">{initialsFor(localName)}</span><strong>{localName}</strong><small>You</small></div>{uniqueRemotePeerIds.map((peerId, index) => { const name = remotePeerNames[peerId] || `Participant ${index + 1}`; return <div className={`participant-tile ${speaking[peerId] ? 'is-speaking' : ''}`} key={peerId}><span className="participant-tile-avatar">{initialsFor(name)}</span><strong>{name}</strong><small>Connected</small></div> })}</div>
 
   return <section className="call-view">
     <div className="call-header">
