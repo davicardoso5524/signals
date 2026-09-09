@@ -1,4 +1,4 @@
-import { getIceServers, getIceTransportPolicy } from './ice'
+import { getIceServers, getIceTransportPolicy, getSignalingWebSocketUrl } from './ice'
 
 type SignalPayload = { description?: RTCSessionDescriptionInit; candidate?: RTCIceCandidateInit }
 
@@ -20,7 +20,6 @@ type PeerState = {
   remoteStreams: Set<MediaStream>
 }
 
-const SIGNALING_URL = import.meta.env.VITE_SIGNALING_URL || (import.meta.env.DEV ? 'ws://127.0.0.1:8787' : '')
 const devLog = (scope: string, message: string, detail?: unknown) => {
   if (import.meta.env.DEV) console.info(`[${scope}] ${message}`, detail ?? '')
 }
@@ -34,16 +33,19 @@ export class RealtimeRoom {
   private roomId = ''
   private peerId = crypto.randomUUID()
   private connectedPeers = new Set<string>()
+  private iceServers: RTCIceServer[] = []
 
   constructor(events: RealtimeEvents) { this.events = events }
 
   async connect(roomId: string, accessToken: string) {
-    if (!SIGNALING_URL) throw new Error('VITE_SIGNALING_URL is required for production')
+    const signalingUrl = getSignalingWebSocketUrl()
+    if (!signalingUrl) throw new Error('VITE_SIGNALING_URL is required for production')
     this.roomId = roomId
+    this.iceServers = await getIceServers(accessToken)
     this.events.status('Connecting to signaling')
     devLog('SIGNAL', 'connecting', { roomId })
     await new Promise<void>((resolve, reject) => {
-      const socket = new WebSocket(SIGNALING_URL)
+      const socket = new WebSocket(signalingUrl)
       this.socket = socket
       socket.onopen = () => { socket.send(JSON.stringify({ type: 'join', roomId, peerId: this.peerId, accessToken })); devLog('SIGNAL', 'join sent', { roomId }); resolve() }
       socket.onerror = () => reject(new Error('Signaling connection failed'))
@@ -93,7 +95,7 @@ export class RealtimeRoom {
   private createPeer(peerId: string, initiator: boolean) {
     const existing = this.peers.get(peerId)
     if (existing) return existing
-    const connection = new RTCPeerConnection({ iceServers: getIceServers(), iceTransportPolicy: getIceTransportPolicy() })
+    const connection = new RTCPeerConnection({ iceServers: this.iceServers, iceTransportPolicy: getIceTransportPolicy() })
     const state: PeerState = {
       connection,
       videoTransceiver: connection.addTransceiver('video', { direction: 'sendrecv' }),
