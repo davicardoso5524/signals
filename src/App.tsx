@@ -7,7 +7,7 @@ import { UpdateGate } from './lib/updater'
 import { createGroup, findProfiles, getOrCreateDirect, listConversations, listMessages as listConversationMessages, listParticipants, sendMessage, subscribeToMessages, type Conversation, type Message, type Profile } from './lib/conversations'
 
 type View = 'Home' | 'People' | 'Rooms' | 'Settings'
-type IconName = 'home' | 'people' | 'rooms' | 'settings' | 'search' | 'plus' | 'arrow' | 'copy' | 'mic' | 'headphones' | 'screen' | 'invite' | 'leave' | 'more' | 'close' | 'eye' | 'sun' | 'moon' | 'logout'
+type IconName = 'home' | 'people' | 'rooms' | 'settings' | 'search' | 'plus' | 'arrow' | 'copy' | 'mic' | 'headphones' | 'screen' | 'invite' | 'leave' | 'more' | 'close' | 'eye' | 'sun' | 'moon' | 'logout' | 'fullscreen'
 type Theme = 'dark' | 'light'
 type RoomMessage = { id: string; roomId: string; authorId: string; authorName: string; username: string; content: string; createdAt: string }
 type Room = { id: string; ownerId: string; name: string; meta: string; code: string; state: string; live: boolean; memberCount: number; participantCount: number; kind: 'quick' | 'persistent'; access: 'invite' | 'password' | 'request'; unread: number }
@@ -26,7 +26,7 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
     home: <><path d="m4 10 8-6 8 6" /><path d="M6 9.5V20h12V9.5M10 20v-5h4v5" /></>,
     people: <><circle cx="9" cy="8" r="3" /><path d="M3.5 20c.5-3.5 2.3-5.2 5.5-5.2s5 1.7 5.5 5.2" /><path d="M15.5 5.5a3 3 0 0 1 0 5.8M17 14.9c2.1.5 3.3 2.2 3.6 4.6" /></>,
     rooms: <><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M8 8h8M8 12h5M8 16h3" /></>,
-    settings: <><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" /><circle cx="12" cy="12" r="3.2" /></>,
+    settings: <><path d="M4 6h16M4 12h16M4 18h16" /><circle cx="9" cy="6" r="2" /><circle cx="15" cy="12" r="2" /><circle cx="10" cy="18" r="2" /></>,
     search: <><circle cx="10.8" cy="10.8" r="6.3" /><path d="m16 16 4.2 4.2" /></>,
     plus: <><path d="M12 5v14M5 12h14" /></>,
     arrow: <><path d="M5 12h13M13 7l5 5-5 5" /></>,
@@ -42,6 +42,7 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
     sun: <><circle cx="12" cy="12" r="3.5" /><path d="M12 2.5v2M12 19.5v2M4.7 4.7l1.4 1.4M17.9 17.9l1.4 1.4M2.5 12h2M19.5 12h2M4.7 19.3l1.4-1.4M17.9 6.1l1.4-1.4" /></>,
     moon: <><path d="M20.2 15.2A8.3 8.3 0 0 1 8.8 3.8 8.3 8.3 0 1 0 20.2 15.2Z" /></>,
     logout: <><path d="M10 5H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4" /><path d="m14 8 4 4-4 4M9 12h9" /></>,
+    fullscreen: <><path d="M8 4H4v4M16 4h4v4M8 20H4v-4M20 16v4h-4" /></>,
   }
   return <svg {...common}>{paths[name]}</svg>
 }
@@ -177,7 +178,7 @@ function SignalWorkspace() {
       </aside>
 
       <main className="main-area">
-        {inCall && activeRoom && <div className={`call-host ${showCall ? 'is-visible' : 'is-hidden'}`}><CallView room={activeRoom} muted={muted} sharing={sharing} onMute={() => setMuted(!muted)} onShare={() => setSharing(!sharing)} onLeave={() => { setInCall(false); setShowCall(false) }} onInvite={() => setShowInvite(true)} /></div>}
+        {inCall && activeRoom && <div className={`call-host ${showCall ? 'is-visible' : 'is-hidden'}`}><CallView room={activeRoom} localName={profile?.display_name || profile?.username || user?.email || 'You'} muted={muted} sharing={sharing} onMute={() => setMuted(!muted)} onShare={() => setSharing(!sharing)} onLeave={() => { setInCall(false); setShowCall(false) }} onInvite={() => setShowInvite(true)} /></div>}
         {(!inCall || !showCall) && (
           <div className="content-scroll">
             {view === 'Home' && <MinimalHomeView recentRooms={hasRoomHistory ? roomList.filter((room) => !dismissedRecentRooms.includes(room.id)).slice(0, 3) : []} rooms={roomList.filter((room) => room.kind === 'persistent').slice(0, 4)} onCreate={() => setShowCreate(true)} onJoin={joinRoom} onOpenRoom={(room) => { setRoomDetail(room); setView('Rooms') }} onDismissRecent={(roomId) => { setDismissedRecentRooms((current) => { const next = [...new Set([...current, roomId])]; if (user) localStorage.setItem(`signals.dismissedRecentRooms.${user.id}`, JSON.stringify(next)); return next }) }} joinError={joinError} />}
@@ -187,7 +188,7 @@ function SignalWorkspace() {
           </div>
         )}
 
-        {inCall && activeRoom && <SessionRail room={activeRoom} inCall={inCall} muted={muted} sharing={sharing} onMute={() => setMuted(!muted)} onEnterCall={() => { setInCall(true); setShowCall(true) }} onCreate={() => setShowCreate(true)} />}
+        {inCall && activeRoom && <SessionRail room={activeRoom} inCall={inCall} muted={muted} sharing={sharing} onMute={() => setMuted(!muted)} onEnterCall={() => { setInCall(true); setShowCall(true) }} onLeave={() => { setInCall(false); setShowCall(false) }} onCreate={() => setShowCreate(true)} />}
       </main>
 
       {showCreate && <CreateRoomModal roomName={roomName} setRoomName={setRoomName} roomKind={roomKind} setRoomKind={setRoomKind} roomAccess={roomAccess} setRoomAccess={setRoomAccess} roomPassword={roomPassword} setRoomPassword={setRoomPassword} onClose={() => setShowCreate(false)} onSubmit={createRoom} />}
@@ -565,13 +566,22 @@ function ShortcutsSettings() { const [shortcuts, setShortcuts] = useState({ mute
 
 function SettingsSection({ title, label, children }: { title: string; label: string; children: React.ReactNode }) { return <section className="settings-section"><div className="settings-section-heading"><div><p className="eyebrow">{label}</p><h2>{title}</h2></div><span className="section-screw" /></div>{children}</section> }
 
-function CallView({ room, muted, sharing, onMute, onShare, onLeave, onInvite }: { room: Room; muted: boolean; sharing: boolean; onMute: () => void; onShare: () => void; onLeave: () => void; onInvite: () => void }) {
+function CallView({ room, localName, muted, sharing, onMute, onShare, onLeave, onInvite }: { room: Room; localName: string; muted: boolean; sharing: boolean; onMute: () => void; onShare: () => void; onLeave: () => void; onInvite: () => void }) {
   const localStreamRef = useRef<MediaStream | null>(null)
   const rawMicStreamRef = useRef<MediaStream | null>(null)
   const micContextRef = useRef<AudioContext | null>(null)
   const screenStreamRef = useRef<MediaStream | null>(null)
   const [mediaStatus, setMediaStatus] = useState('Preparing local media…')
   const [participantCount, setParticipantCount] = useState(1)
+  const [remotePeerIds, setRemotePeerIds] = useState<string[]>([])
+  const [remotePeerNames, setRemotePeerNames] = useState<Record<string, string>>({})
+  const [remotePeerUsers, setRemotePeerUsers] = useState<Record<string, string>>({})
+  const [outputMuted, setOutputMuted] = useState(false)
+  const outputMutedRef = useRef(false)
+  const remoteAudioRef = useRef(new Map<string, HTMLAudioElement>())
+  const screenStageRef = useRef<HTMLDivElement | null>(null)
+  const [fullscreen, setFullscreen] = useState(false)
+  const [showActions, setShowActions] = useState(false)
   const realtimeRef = useRef<RealtimeRoom | null>(null)
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null)
   const [remoteVideo, setRemoteVideo] = useState<MediaStream | null>(null)
@@ -607,7 +617,21 @@ function CallView({ room, muted, sharing, onMute, onShare, onLeave, onInvite }: 
     const realtime = new RealtimeRoom({
       status: (status) => setMediaStatus(status),
       participants: (count) => setParticipantCount(count),
-      remoteAudio: (stream, peerId) => { const audio = new Audio(); audio.autoplay = true; audio.srcObject = stream; audio.dataset.peerId = peerId; audio.play().catch(() => undefined) },
+      peerIds: (ids) => { setRemotePeerIds(ids); setParticipantCount(ids.length + 1) },
+      peerNames: (names) => setRemotePeerNames(names),
+      peerUsers: (users) => setRemotePeerUsers(users),
+      remoteAudio: (stream, peerId) => {
+        const previous = remoteAudioRef.current.get(peerId)
+        previous?.pause()
+        if (previous) previous.srcObject = null
+        const audio = new Audio()
+        audio.autoplay = true
+        audio.muted = outputMutedRef.current
+        audio.srcObject = stream
+        audio.dataset.peerId = peerId
+        remoteAudioRef.current.set(peerId, audio)
+        audio.play().catch(() => undefined)
+      },
       remoteVideo: (stream) => setRemoteVideo(stream),
     })
     realtimeRef.current = realtime
@@ -615,9 +639,18 @@ function CallView({ room, muted, sharing, onMute, onShare, onLeave, onInvite }: 
     supabase.auth.getSession().then(({ data }) => {
       const accessToken = data.session?.access_token
       if (!accessToken) throw new Error('Session unavailable')
-      return realtime.connect(room.id, accessToken)
+      return realtime.connect(room.id, accessToken, localName)
     }).then(() => { if (localStreamRef.current) realtime.setLocalStream(localStreamRef.current) }).catch(() => setMediaStatus('Signaling server unavailable'))
-    return () => { realtime.close(); realtimeRef.current = null; setRemoteVideo(null) }
+    return () => {
+      realtime.close()
+      realtimeRef.current = null
+      remoteAudioRef.current.forEach((audio) => { audio.pause(); audio.srcObject = null })
+      remoteAudioRef.current.clear()
+      setRemotePeerIds([])
+      setRemotePeerNames({})
+      setRemotePeerUsers({})
+      setRemoteVideo(null)
+    }
   }, [room.code])
 
   useEffect(() => {
@@ -630,6 +663,26 @@ function CallView({ room, muted, sharing, onMute, onShare, onLeave, onInvite }: 
   useEffect(() => {
     localStreamRef.current?.getAudioTracks().forEach((track) => { track.enabled = !muted })
   }, [muted])
+
+  useEffect(() => {
+    const handleFullscreenChange = () => setFullscreen(document.fullscreenElement === screenStageRef.current)
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  }, [])
+
+  const toggleOutput = () => {
+    const next = !outputMutedRef.current
+    outputMutedRef.current = next
+    setOutputMuted(next)
+    remoteAudioRef.current.forEach((audio) => { audio.muted = next })
+  }
+
+  const toggleFullscreen = async () => {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen()
+      else await screenStageRef.current?.requestFullscreen()
+    } catch { devLog('WEBRTC', 'fullscreen is unavailable') }
+  }
 
   const stopScreenShare = () => {
     if (screenStopHandledRef.current) return
@@ -660,11 +713,24 @@ function CallView({ room, muted, sharing, onMute, onShare, onLeave, onInvite }: 
     } catch { devLog('SCREEN', 'screen capture failed or cancelled'); setMediaStatus('Couldn\'t start screen sharing.') }
   }
 
-  return <section className="call-view"><div className="call-header"><div><p className="eyebrow">Room {room.code}</p><h1>{room.name}</h1></div><div className="call-header-meta"><span className="connection-pill" aria-label="Connected"><span className="status-led" /><span className="sr-only">Connected</span></span><span className="media-status">{mediaStatus}</span><span className="participant-count">{String(participantCount).padStart(2, '0')} participants</span><button className="icon-button" aria-label="Room actions"><Icon name="more" /></button></div></div><div className={`screen-stage ${sharing ? 'is-sharing' : ''} ${remoteVideo ? 'has-remote-video' : ''}`}><div className="stage-grid" />{remoteVideo && <video ref={remoteVideoRef} className="remote-video" autoPlay playsInline aria-label="Remote shared screen" />}{!remoteVideo && <div className="stage-center">{sharing ? <><span className="screen-icon"><Icon name="screen" size={30} /></span><span className="stage-kicker">SCREEN SHARE</span><strong>Screen sharing active</strong><span>Live media stream</span></> : <><span className="room-symbol large">{room.name.slice(0, 2).toUpperCase()}</span><strong>Ready to share the room</strong><span>Start screen sharing when you need the focus.</span></>}</div>}<div className="stage-topline"><span>{sharing ? 'SCREEN SHARE' : 'VOICE SESSION'}</span><span>{sharing ? 'Live media stream' : 'No content shared'}</span></div></div><div className="participant-strip" aria-live="polite"><div className="participant"><strong>{participantCount} {participantCount === 1 ? 'participant' : 'participants'} connected</strong><small>Live room presence</small><span className="signal-bars active"><i /><i /><i /><i /></span></div></div><div className="call-controls"><ControlButton icon="mic" label={muted ? 'Unmute' : 'Mute'} active={!muted} onClick={onMute} /><ControlButton icon="headphones" label="Output" /><ControlButton icon="screen" label={sharing ? 'Stop sharing' : 'Share screen'} active={sharing} onClick={toggleScreenShare} /><ControlButton icon="invite" label="Invite" onClick={onInvite} /><button className="leave-button" aria-label="Leave call" onClick={onLeave}><Icon name="leave" size={17} /><span>Leave</span></button></div></section>
+  return <section className="call-view">
+    <div className="call-header">
+      <div><p className="eyebrow">Room {room.code}</p><h1>{room.name}</h1></div>
+      <div className="call-header-meta"><span className="connection-pill" aria-label="Connected"><span className="status-led" /><span className="sr-only">Connected</span></span><span className="media-status">{mediaStatus}</span><span className="participant-count">{String(participantCount).padStart(2, '0')} participants</span><div className="call-actions-wrap"><button className="icon-button" aria-label="Room actions" aria-expanded={showActions} onClick={() => setShowActions(!showActions)}><Icon name="more" /></button>{showActions && <div className="room-actions-menu call-actions-menu"><button onClick={onInvite}>Invite to room</button><button onClick={onLeave}>Leave call</button></div>}</div></div>
+    </div>
+    <div ref={screenStageRef} className={`screen-stage ${sharing ? 'is-sharing' : ''} ${remoteVideo ? 'has-remote-video' : ''}`}>
+      <div className="stage-grid" />
+      {remoteVideo && <video ref={remoteVideoRef} className="remote-video" autoPlay playsInline aria-label="Remote shared screen" />}
+      {!remoteVideo && <div className="stage-center">{sharing ? <><span className="screen-icon"><Icon name="screen" size={30} /></span><span className="stage-kicker">SCREEN SHARE</span><strong>Screen sharing active</strong><span>Live media stream</span></> : <div className="participant-tiles"><div className="participant-tile"><span className="participant-tile-avatar">{initialsFor(localName)}</span><strong>{localName}</strong><small>You</small></div>{remotePeerIds.filter((peerId, index, ids) => ids.findIndex((candidate) => (remotePeerUsers[candidate] || candidate) === (remotePeerUsers[peerId] || peerId)) === index).map((peerId, index) => { const name = remotePeerNames[peerId] || `Participant ${index + 1}`; return <div className="participant-tile" key={peerId}><span className="participant-tile-avatar">{initialsFor(name)}</span><strong>{name}</strong><small>Connected</small></div> })}</div>}</div>}
+      {(remoteVideo || sharing) && <button className="stage-fullscreen-button" aria-label={fullscreen ? 'Exit fullscreen' : 'Open fullscreen'} onClick={toggleFullscreen}><Icon name="fullscreen" size={17} /></button>}
+    </div>
+    <div className="participant-strip" aria-live="polite"><div className="participant"><strong>{participantCount} {participantCount === 1 ? 'participant' : 'participants'} connected</strong><small>Live room presence</small><span className="signal-bars active"><i /><i /><i /><i /></span></div></div>
+    <div className="call-controls"><ControlButton icon="mic" label={muted ? 'Unmute microphone' : 'Mute microphone'} active={!muted} onClick={onMute} /><ControlButton icon="headphones" label={outputMuted ? 'Unmute headphones' : 'Mute headphones'} active={!outputMuted} onClick={toggleOutput} /><ControlButton icon="screen" label={sharing ? 'Stop sharing' : 'Share screen'} active={sharing} onClick={toggleScreenShare} /><ControlButton icon="invite" label="Invite" onClick={onInvite} /><button className="leave-button" aria-label="Leave call" onClick={onLeave}><Icon name="leave" size={17} /><span>Leave</span></button></div>
+  </section>
 }
 
 function ControlButton({ icon, label, active, onClick }: { icon: IconName; label: string; active?: boolean; onClick?: () => void }) { return <button className={`control-button ${active ? 'active' : ''}`} aria-label={label} onClick={onClick}><Icon name={icon} size={18} /><span>{label}</span></button> }
 
-function SessionRail({ room, inCall, muted, sharing, onMute, onEnterCall, onCreate }: { room: Room; inCall: boolean; muted: boolean; sharing: boolean; onMute: () => void; onEnterCall: () => void; onCreate: () => void }) { return <footer className={`session-rail ${inCall ? 'session-active' : ''}`}><div className="session-context"><span className={`session-signal ${inCall ? 'live' : ''}`}><i /><i /><i /><i /></span><div><span className="eyebrow">{inCall ? 'Active session' : 'Session rail'}</span><strong>{inCall ? room.name : 'No active session'}</strong></div></div>{inCall ? <><div className="rail-status"><span className="status-led" />{sharing ? 'Sharing screen' : muted ? 'Muted' : 'Your mic is live'}</div><div className="rail-actions"><button className="rail-icon-button" onClick={onMute} aria-label={muted ? 'Unmute microphone' : 'Mute microphone'}><Icon name="mic" size={16} /></button><button className="rail-open-button" onClick={onEnterCall}>Open session <Icon name="arrow" size={15} /></button></div></> : <div className="rail-actions"><span className="rail-hint">A room is one click away.</span><button className="rail-open-button" onClick={onCreate}><Icon name="plus" size={15} />Create room</button></div>}</footer> }
+function SessionRail({ room, inCall, muted, sharing, onMute, onEnterCall, onLeave, onCreate }: { room: Room; inCall: boolean; muted: boolean; sharing: boolean; onMute: () => void; onEnterCall: () => void; onLeave: () => void; onCreate: () => void }) { return <footer className={`session-rail ${inCall ? 'session-active' : ''}`}><div className="session-context"><span className={`session-signal ${inCall ? 'live' : ''}`}><i /><i /><i /><i /></span><div><strong>{inCall ? room.name : 'No active session'}</strong></div></div>{inCall ? <><div className="rail-status"><span className="status-led" />{sharing ? 'Sharing screen' : muted ? 'Muted' : 'Your mic is live'}</div><div className="rail-actions"><button className="rail-icon-button" onClick={onMute} aria-label={muted ? 'Unmute microphone' : 'Mute microphone'}><Icon name="mic" size={16} /></button><button className="rail-open-button" onClick={onEnterCall}>Open session <Icon name="arrow" size={15} /></button><button className="rail-leave-button" onClick={onLeave} aria-label="Leave call"><Icon name="leave" size={15} /><span>Leave</span></button></div></> : <div className="rail-actions"><span className="rail-hint">A room is one click away.</span><button className="rail-open-button" onClick={onCreate}><Icon name="plus" size={15} />Create room</button></div>}</footer> }
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) { return <div className="modal-backdrop" role="presentation" onMouseDown={(e) => { if (e.currentTarget === e.target) onClose() }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div className="modal-header"><div><p className="eyebrow">Signal</p><h2 id="modal-title">{title}</h2></div><button className="icon-button" onClick={onClose} aria-label="Close dialog"><Icon name="close" size={18} /></button></div>{children}</section></div> }

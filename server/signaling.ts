@@ -3,8 +3,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createClient } from '@supabase/supabase-js'
 import { WebSocketServer, WebSocket } from 'ws'
 
-type Client = WebSocket & { roomId?: string; peerId?: string; userId?: string }
-type Message = { type: string; roomId?: string; peerId?: string; target?: string; accessToken?: string; payload?: unknown }
+type Client = WebSocket & { roomId?: string; peerId?: string; userId?: string; displayName?: string }
+type Message = { type: string; roomId?: string; peerId?: string; target?: string; accessToken?: string; displayName?: string; payload?: unknown }
 
 const port = Number(process.env.PORT || process.env.SIGNALING_PORT || 8787)
 const supabaseUrl = process.env.SUPABASE_URL
@@ -69,6 +69,7 @@ const leaveRoom = (client: Client) => {
   if (!client.roomId || !client.peerId) return
   const roomId = client.roomId
   const peers = rooms.get(roomId)
+  if (!peers?.has(client)) { client.roomId = undefined; client.peerId = undefined; client.userId = undefined; client.displayName = undefined; return }
   peers?.delete(client)
   for (const peer of peers || []) send(peer, { type: 'peer-left', peerId: client.peerId })
   if (peers?.size === 0) rooms.delete(roomId)
@@ -103,24 +104,27 @@ websocketServer.on('connection', (socket) => {
 
     if (message.type === 'join') {
       if (client.roomId) { reject(client, 'Already joined a room.'); return }
-      if (!message.roomId || !uuidPattern.test(message.roomId) || !message.peerId || !uuidPattern.test(message.peerId) || typeof message.accessToken !== 'string' || !message.accessToken) { reject(client, 'Invalid signaling join.'); return }
+      if (!message.roomId || !uuidPattern.test(message.roomId) || !message.peerId || !uuidPattern.test(message.peerId) || typeof message.accessToken !== 'string' || !message.accessToken || typeof message.displayName !== 'string' || !message.displayName.trim() || message.displayName.length > 80) { reject(client, 'Invalid signaling join.'); return }
       if (!supabaseUrl || !supabaseKey) { console.warn('[SIGNAL] Supabase server configuration is missing'); reject(client, 'Signaling authentication is unavailable.'); return }
       const user = await authenticateToken(message.accessToken)
       if (!user) { console.warn('[SIGNAL] rejected invalid token'); reject(client, 'Signaling authentication failed.'); return }
       const authClient = createClient(supabaseUrl, supabaseKey, { global: { headers: { Authorization: `Bearer ${message.accessToken}` } } })
       const { data: membership, error: membershipError } = await authClient.from('room_members').select('room_id').eq('room_id', message.roomId).eq('user_id', user.id).maybeSingle()
       if (membershipError || !membership) { console.warn('[SIGNAL] rejected non-member join', { roomId: message.roomId }); reject(client, 'You are not a member of this room.'); return }
+      const room = rooms.get(message.roomId) || new Set<Client>()
+      const previousSession = peersInRoom(message.roomId).find((peer) => peer.userId === user.id)
+      if (previousSession) { console.info('[SIGNAL] replacing previous session for user', { roomId: message.roomId, userId: user.id }); leaveRoom(previousSession); previousSession.close(4000, 'Replaced by newer session') }
       if (peersInRoom(message.roomId).some((peer) => peer.peerId === message.peerId)) { reject(client, 'Peer connection already exists.'); return }
       const peers = peersInRoom(message.roomId)
-      const room = rooms.get(message.roomId) || new Set<Client>()
       client.roomId = message.roomId
       client.peerId = message.peerId
       client.userId = user.id
+      client.displayName = message.displayName.trim()
       room.add(client)
       rooms.set(message.roomId, room)
       console.info('[SIGNAL] authorized room join', { roomId: message.roomId, userId: user.id })
-      send(client, { type: 'room-peers', peers: peers.map((peer) => peer.peerId).filter(Boolean) })
-      for (const peer of peers) send(peer, { type: 'peer-joined', peerId: message.peerId })
+      send(client, { type: 'room-peers', peers: peers.map((peer) => peer.peerId).filter(Boolean), peerInfo: peers.filter((peer) => peer.peerId).map((peer) => ({ peerId: peer.peerId, userId: peer.userId, displayName: peer.displayName || 'Participant' })) })
+      for (const peer of peers) send(peer, { type: 'peer-joined', peerId: message.peerId, userId: client.userId, displayName: client.displayName })
       return
     }
 

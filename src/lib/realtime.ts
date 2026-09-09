@@ -5,6 +5,9 @@ type SignalPayload = { description?: RTCSessionDescriptionInit; candidate?: RTCI
 type RealtimeEvents = {
   status: (status: string) => void
   participants: (count: number) => void
+  peerIds: (peerIds: string[]) => void
+  peerNames: (peerNames: Record<string, string>) => void
+  peerUsers: (peerUsers: Record<string, string>) => void
   remoteAudio: (stream: MediaStream, peerId: string) => void
   remoteVideo: (stream: MediaStream, peerId: string) => void
 }
@@ -17,6 +20,8 @@ type PeerState = {
   ignoreOffer: boolean
   isSettingRemoteAnswerPending: boolean
   polite: boolean
+  userId: string
+  displayName: string
   remoteStreams: Set<MediaStream>
 }
 
@@ -34,10 +39,12 @@ export class RealtimeRoom {
   private peerId = crypto.randomUUID()
   private connectedPeers = new Set<string>()
   private iceServers: RTCIceServer[] = []
+  private peerNames = new Map<string, string>()
+  private peerUsers = new Map<string, string>()
 
   constructor(events: RealtimeEvents) { this.events = events }
 
-  async connect(roomId: string, accessToken: string) {
+  async connect(roomId: string, accessToken: string, displayName = 'Participant') {
     const signalingUrl = getSignalingWebSocketUrl()
     if (!signalingUrl) throw new Error('VITE_SIGNALING_URL is required for production')
     this.roomId = roomId
@@ -47,7 +54,7 @@ export class RealtimeRoom {
     await new Promise<void>((resolve, reject) => {
       const socket = new WebSocket(signalingUrl)
       this.socket = socket
-      socket.onopen = () => { socket.send(JSON.stringify({ type: 'join', roomId, peerId: this.peerId, accessToken })); devLog('SIGNAL', 'join sent', { roomId }); resolve() }
+      socket.onopen = () => { socket.send(JSON.stringify({ type: 'join', roomId, peerId: this.peerId, accessToken, displayName })); devLog('SIGNAL', 'join sent', { roomId }); resolve() }
       socket.onerror = () => reject(new Error('Signaling connection failed'))
       socket.onclose = () => { devLog('SIGNAL', 'socket closed', { roomId }); this.events.status('Signaling disconnected') }
       socket.onmessage = (event) => { void this.handleMessage(JSON.parse(event.data)) }
@@ -81,8 +88,13 @@ export class RealtimeRoom {
       devLog('WEBRTC', 'peer connection closed', { peerId })
     }
     this.peers.clear()
+    this.peerNames.clear()
+    this.peerUsers.clear()
     this.connectedPeers.clear()
     this.events.participants(1)
+    this.events.peerIds([])
+    this.events.peerNames({})
+    this.events.peerUsers({})
     this.socket?.close()
     this.socket = null
     this.roomId = ''
@@ -92,7 +104,18 @@ export class RealtimeRoom {
     for (const track of stream.getAudioTracks()) if (!connection.getSenders().some((sender) => sender.track?.id === track.id)) connection.addTrack(track, stream)
   }
 
-  private createPeer(peerId: string, initiator: boolean) {
+  private notifyPeerIds() {
+    this.events.peerIds([...this.peers.keys()])
+    this.events.peerNames(Object.fromEntries(this.peerNames))
+    this.events.peerUsers(Object.fromEntries(this.peerUsers))
+  }
+
+  private notifyParticipants() {
+    const activeUsers = new Set([...this.connectedPeers].map((peerId) => this.peerUsers.get(peerId) || peerId))
+    this.events.participants(activeUsers.size + 1)
+  }
+
+  private createPeer(peerId: string, initiator: boolean, displayName = 'Participant', userId = '') {
     const existing = this.peers.get(peerId)
     if (existing) return existing
     const connection = new RTCPeerConnection({ iceServers: this.iceServers, iceTransportPolicy: getIceTransportPolicy() })
@@ -104,9 +127,13 @@ export class RealtimeRoom {
       ignoreOffer: false,
       isSettingRemoteAnswerPending: false,
       polite: this.peerId > peerId,
+      displayName,
+      userId,
       remoteStreams: new Set(),
     }
     this.peers.set(peerId, state)
+    this.peerNames.set(peerId, displayName || 'Participant')
+    this.peerUsers.set(peerId, userId || peerId)
     devLog('WEBRTC', 'peer created', { peerId, polite: state.polite })
     if (this.localStream) this.addAudioTracks(connection, this.localStream)
     if (this.screenStream) void state.videoTransceiver.sender.replaceTrack(this.screenStream.getVideoTracks()[0] || null)
@@ -121,7 +148,8 @@ export class RealtimeRoom {
     }
     connection.onconnectionstatechange = () => {
       devLog('WEBRTC', `peer ${peerId} connectionState=${connection.connectionState}`)
-      if (connection.connectionState === 'connected') { this.connectedPeers.add(peerId); this.events.participants(this.connectedPeers.size + 1); this.events.status('P2P connected') }
+      if (connection.connectionState === 'connected') { this.connectedPeers.add(peerId); this.notifyParticipants(); this.events.status('P2P connected') }
+      if (connection.connectionState === 'disconnected' || connection.connectionState === 'failed' || connection.connectionState === 'closed') { this.connectedPeers.delete(peerId); this.notifyParticipants() }
       if (connection.connectionState === 'failed') this.events.status('P2P connection failed')
     }
     connection.oniceconnectionstatechange = () => devLog('ICE', `peer ${peerId} iceConnectionState=${connection.iceConnectionState}`)
@@ -152,12 +180,14 @@ export class RealtimeRoom {
 
   private sendSignal(target: string, payload: SignalPayload) { if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify({ type: 'signal', roomId: this.roomId, peerId: this.peerId, target, payload })) }
 
-  private async handleMessage(message: { type: string; peers?: string[]; peerId?: string; from?: string; payload?: SignalPayload }) {
-    if (message.type === 'room-peers') { for (const peerId of message.peers || []) this.createPeer(peerId, true); this.events.participants((message.peers?.length || 0) + 1); this.events.status(message.peers?.length ? 'Negotiating P2P' : 'Waiting for another peer'); return }
-    if (message.type === 'peer-joined' && message.peerId) { this.createPeer(message.peerId, false); this.events.participants(this.peers.size + 1); return }
-    if (message.type === 'peer-left' && message.peerId) { const state = this.peers.get(message.peerId); state?.connection.close(); state?.pendingCandidates.splice(0); state?.remoteStreams.clear(); this.peers.delete(message.peerId); this.connectedPeers.delete(message.peerId); this.events.participants(this.connectedPeers.size + 1); devLog('WEBRTC', 'peer left and state cleared', { peerId: message.peerId }); return }
+  private async handleMessage(message: { type: string; peers?: string[]; peerInfo?: Array<{ peerId: string; userId?: string; displayName?: string }>; peerId?: string; userId?: string; displayName?: string; from?: string; payload?: SignalPayload }) {
+    if (message.type === 'room-peers') { const peerInfo: Array<{ peerId: string; userId?: string; displayName?: string }> = message.peerInfo || (message.peers || []).map((peerId) => ({ peerId })); for (const peer of peerInfo) this.createPeer(peer.peerId, true, peer.displayName, peer.userId); this.notifyPeerIds(); this.notifyParticipants(); this.events.status(peerInfo.length ? 'Negotiating P2P' : 'Waiting for another peer'); return }
+    if (message.type === 'peer-joined' && message.peerId) { this.createPeer(message.peerId, false, message.displayName, message.userId); this.notifyPeerIds(); return }
+    if (message.type === 'peer-left' && message.peerId) { const state = this.peers.get(message.peerId); state?.connection.close(); state?.pendingCandidates.splice(0); state?.remoteStreams.clear(); this.peers.delete(message.peerId); this.peerNames.delete(message.peerId); this.peerUsers.delete(message.peerId); this.connectedPeers.delete(message.peerId); this.notifyPeerIds(); this.notifyParticipants(); devLog('WEBRTC', 'peer left and state cleared', { peerId: message.peerId }); return }
     if (message.type !== 'signal' || !message.from || !message.payload) return
+    const hadPeer = this.peers.has(message.from)
     const state = this.createPeer(message.from, false)
+    if (!hadPeer) this.notifyPeerIds()
     const connection = state.connection
     const description = message.payload.description
     if (description) {

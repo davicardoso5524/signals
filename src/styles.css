@@ -290,6 +290,23 @@ h3 { color: var(--text); font-size: 14px; font-weight: 500; }
 .room-actions-menu button:hover { color: var(--text); background: var(--panel-3); }
 .room-actions-menu button.is-danger, .danger-button { color: var(--danger); }
 .room-actions-menu button.is-danger:hover, .danger-button:hover { border-color: var(--danger); color: var(--danger); background: rgba(213,109,98,.08); }
+.call-actions-wrap { position: relative; }
+.call-actions-menu { min-width: 145px; }
+.participant-tiles { display: flex; max-width: min(760px, 90vw); align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; }
+.participant-tile { display: grid; width: 150px; min-height: 120px; place-items: center; align-content: center; gap: 6px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel-2); padding: 16px 12px; box-shadow: var(--recess); }
+.participant-tile-avatar { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 5px; color: var(--accent); background: var(--accent-muted); font-family: var(--mono); font-size: 12px; }
+.participant-tile strong { color: var(--text); font-size: 12px; font-weight: 500; text-align: center; }
+.participant-tile small { color: var(--text-faint); font-family: var(--mono); font-size: 8px; }
+.stage-fullscreen-button { position: absolute; top: 12px; right: 12px; z-index: 2; display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid var(--line-light); border-radius: 5px; color: var(--text-dim); background: rgba(12,12,12,.82); }
+.stage-fullscreen-button:hover { border-color: var(--accent-border); color: var(--accent); }
+.screen-stage:fullscreen { width: 100vw; height: 100vh; min-height: 100vh; border-radius: 0; }
+.rail-leave-button { display: inline-flex; min-height: 30px; align-items: center; gap: 7px; border: 1px solid transparent; border-radius: 4px; color: var(--danger); background: transparent; padding: 0 8px; font-family: var(--mono); font-size: 9px; }
+.rail-leave-button:hover { border-color: rgba(213,109,98,.3); background: rgba(213,109,98,.08); }
+.session-rail.session-active .session-context strong { color: var(--text); font-size: 11px; font-weight: 500; }
+.session-rail.session-active .rail-icon-button { display: grid; width: 30px; height: 30px; place-items: center; border: 1px solid var(--line-light); border-radius: 4px; color: var(--text-dim); background: var(--panel-3); }
+.session-rail.session-active .rail-icon-button:hover { border-color: var(--accent-border); color: var(--accent); background: var(--accent-muted); }
+.session-rail.session-active .rail-open-button { display: inline-flex; min-height: 30px; align-items: center; gap: 7px; border: 1px solid var(--line-light); border-radius: 4px; color: var(--text-secondary); background: var(--panel-3); padding: 0 10px; font-family: var(--mono); font-size: 9px; }
+.session-rail.session-active .rail-open-button:hover { border-color: var(--accent-border); color: var(--accent); background: var(--accent-muted); }
 .room-member-remove { margin-left: auto; border: 0; color: var(--danger); background: transparent; font-size: 9px; }
 .room-member-remove:hover { color: var(--text); }
 .room-list-actions .room-actions-wrap .room-more { display: grid; }
