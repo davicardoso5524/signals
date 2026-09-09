@@ -15,6 +15,8 @@ type Person = { id: string; initials: string; name: string; username: string; to
 
 const people: Person[] = []
 const devLog = (scope: string, message: string) => { if (import.meta.env.DEV) console.info(`[${scope}] ${message}`) }
+const SETTINGS_CHANGED_EVENT = 'signals-settings-changed'
+const notifySettingsChanged = () => window.dispatchEvent(new Event(SETTINGS_CHANGED_EVENT))
 
 function mapRoom(record: { id: string; owner_id?: string; name: string; code: string; kind: Room['kind']; access: Room['access']; member_count?: number }): Room {
   return { id: record.id, ownerId: record.owner_id || '', name: record.name, meta: `${record.member_count || 0} people`, code: record.code, state: 'Ready', live: false, memberCount: record.member_count || 0, participantCount: 0, kind: record.kind, access: record.access, unread: 0 }
@@ -376,8 +378,8 @@ function SettingsView() {
   const [pushToTalk, setPushToTalk] = useState(() => localStorage.getItem('signal.audio.pushToTalk') === 'true')
   const [inputDevices, setInputDevices] = useState<MediaDeviceInfo[]>([])
   const [outputDevices, setOutputDevices] = useState<MediaDeviceInfo[]>([])
-  const [inputDeviceId, setInputDeviceId] = useState('')
-  const [outputDeviceId, setOutputDeviceId] = useState('')
+  const [inputDeviceId, setInputDeviceId] = useState(() => localStorage.getItem('signal.audio.inputDeviceId') || '')
+  const [outputDeviceId, setOutputDeviceId] = useState(() => localStorage.getItem('signal.audio.outputDeviceId') || '')
   const [audioReady, setAudioReady] = useState(false)
   const [audioLevel, setAudioLevel] = useState(0)
   const [audioDb, setAudioDb] = useState(-60)
@@ -475,7 +477,7 @@ function SettingsView() {
       const destination = context.createMediaStreamDestination()
       const audio = new Audio()
       oscillator.frequency.value = 440
-      gain.gain.value = Math.max(0.005, volume / 1000)
+      gain.gain.value = Math.max(0.005, volume / 100)
       oscillator.connect(gain).connect(destination)
       audio.autoplay = true
       audio.srcObject = destination.stream
@@ -516,7 +518,7 @@ function SettingsView() {
   }, [inputVolume])
 
   useEffect(() => {
-    if (outputGainRef.current) outputGainRef.current.gain.value = Math.max(0.005, volume / 1000)
+    if (outputGainRef.current) outputGainRef.current.gain.value = Math.max(0.005, volume / 100)
   }, [volume])
 
   useEffect(() => {
@@ -524,7 +526,10 @@ function SettingsView() {
     localStorage.setItem('signal.audio.inputVolume', String(inputVolume))
     localStorage.setItem('signal.audio.noiseReduction', String(noiseReduction))
     localStorage.setItem('signal.audio.pushToTalk', String(pushToTalk))
-  }, [volume, inputVolume, noiseReduction, pushToTalk])
+    localStorage.setItem('signal.audio.inputDeviceId', inputDeviceId)
+    localStorage.setItem('signal.audio.outputDeviceId', outputDeviceId)
+    notifySettingsChanged()
+  }, [volume, inputVolume, noiseReduction, pushToTalk, inputDeviceId, outputDeviceId])
 
   const inputName = inputDevices.find((device) => device.deviceId === inputDeviceId)?.label || 'Default microphone'
   const outputName = outputDevices.find((device) => device.deviceId === outputDeviceId)?.label || 'Default output'
@@ -595,6 +600,13 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
   const [remoteScreenStreams, setRemoteScreenStreams] = useState<Record<string, MediaStream>>({})
   const screenStopHandledRef = useRef(false)
 
+  const applyOutputSettings = (audio: HTMLAudioElement) => {
+    audio.volume = Math.max(0, Math.min(1, Number(localStorage.getItem('signal.audio.volume') || 72) / 100))
+    const outputDeviceId = localStorage.getItem('signal.audio.outputDeviceId') || ''
+    const sinkAudio = audio as HTMLAudioElement & { setSinkId?: (sinkId: string) => Promise<void> }
+    if (outputDeviceId && typeof sinkAudio.setSinkId === 'function') void sinkAudio.setSinkId(outputDeviceId).catch(() => devLog('AUDIO', 'selected output is unavailable'))
+  }
+
   const removeSpeakingDetector = (key: string) => {
     const detector = speakingDetectorsRef.current.get(key)
     if (!detector) return
@@ -651,7 +663,9 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
     const prepareMicrophone = async () => {
       if (!navigator.mediaDevices?.getUserMedia) { setMediaStatus('Local media unavailable'); return }
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        const configuredInputDevice = localStorage.getItem('signal.audio.inputDeviceId') || ''
+        const noiseReduction = localStorage.getItem('signal.audio.noiseReduction') !== 'false'
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: configuredInputDevice ? { exact: configuredInputDevice } : undefined, echoCancellation: noiseReduction, noiseSuppression: noiseReduction, autoGainControl: true } })
         if (cancelled) { stream.getTracks().forEach((track) => track.stop()); return }
         const context = new AudioContext()
         const source = context.createMediaStreamSource(stream)
@@ -695,6 +709,7 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
         audio.muted = outputMutedRef.current
         audio.srcObject = stream
         audio.dataset.peerId = peerId
+        applyOutputSettings(audio)
         remoteAudioRef.current.set(peerId, audio)
         audio.play().catch(() => undefined)
       },
@@ -727,6 +742,12 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
       stopSpeakingMonitor()
     }
   }, [room.code])
+
+  useEffect(() => {
+    const updateOutput = () => remoteAudioRef.current.forEach((audio) => applyOutputSettings(audio))
+    window.addEventListener(SETTINGS_CHANGED_EVENT, updateOutput)
+    return () => window.removeEventListener(SETTINGS_CHANGED_EVENT, updateOutput)
+  }, [])
 
   useEffect(() => {
     mutedRef.current = muted
