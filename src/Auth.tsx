@@ -39,6 +39,8 @@ function AuthForm({ initialMode = 'login', onRecoveryComplete }: { initialMode?:
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [usernameState, setUsernameState] = useState<'idle' | 'available' | 'taken'>('idle')
+  const [verificationSent, setVerificationSent] = useState(false)
+  const [verificationCode, setVerificationCode] = useState('')
 
   useEffect(() => { setError(''); setMessage('') }, [mode])
 
@@ -57,6 +59,18 @@ function AuthForm({ initialMode = 'login', onRecoveryComplete }: { initialMode?:
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setError(''); setMessage('')
     if (!supabase) { setError('Supabase is not configured yet. Add the public VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY values.'); return }
+    if (verificationSent) {
+      if (!/^\d{6,8}$/.test(verificationCode.trim())) { setError('Enter the verification code from your email.'); return }
+      setBusy(true)
+      try {
+        const { error: verifyError } = await supabase.auth.verifyOtp({ email: email.trim(), token: verificationCode.trim(), type: 'email' })
+        if (verifyError) throw verifyError
+        setVerificationSent(false); setVerificationCode(''); setPassword(''); setMode('login')
+        setMessage('Email confirmed. You can now sign in.')
+      } catch (verifyError) { setError(friendlyError(verifyError instanceof Error ? verifyError.message : '')) }
+      finally { setBusy(false) }
+      return
+    }
     if (mode === 'register' && (!displayName.trim() || !validateUsername(normalizedUsername))) { setError('Enter a name and a username with 3–20 lowercase letters, numbers, dots or underscores.'); return }
     if (mode === 'register' && usernameState === 'taken') { setError('@' + normalizedUsername + ' is already taken.'); return }
     setBusy(true)
@@ -79,25 +93,36 @@ function AuthForm({ initialMode = 'login', onRecoveryComplete }: { initialMode?:
           options: { data: { display_name: displayName.trim(), username: normalizedUsername }, emailRedirectTo: authRedirectUrl },
         })
         if (registerError) throw registerError
-        if (!data.session) setMessage('Check your email to confirm your account, then return to SIGNAL.')
+        if (!data.session) { setVerificationSent(true); setMessage('We sent a verification code to your email.') }
       }
     } catch (submitError) { setError(friendlyError(submitError instanceof Error ? submitError.message : '')) }
     finally { setBusy(false) }
   }
 
-  const title = mode === 'login' ? 'Sign in' : mode === 'register' ? 'Create your account.' : mode === 'recovery' ? 'Choose a new password.' : 'Reset your password.'
+  const resendVerificationCode = async () => {
+    if (!supabase || !email.trim()) return
+    setError(''); setMessage(''); setBusy(true)
+    try {
+      const { error: resendError } = await supabase.auth.resend({ type: 'signup', email: email.trim() })
+      if (resendError) throw resendError
+      setMessage('A new verification code is on its way.')
+    } catch (resendError) { setError(friendlyError(resendError instanceof Error ? resendError.message : '')) }
+    finally { setBusy(false) }
+  }
+
+  const title = verificationSent ? 'Check your email.' : mode === 'login' ? 'Sign in' : mode === 'register' ? 'Create your account.' : mode === 'recovery' ? 'Choose a new password.' : 'Reset your password.'
   return <main className="auth-shell"><section className="auth-panel" aria-labelledby="auth-title"><div className="auth-brand"><img src="/signals.png" alt="Signals" /></div><h1 id="auth-title">{title}</h1>{mode === 'forgot' && <p className="auth-copy">Enter your email and we’ll send a secure recovery link.</p>}
     <form className="auth-form" onSubmit={submit} noValidate>
-      {mode === 'register' && <><label className="auth-label" htmlFor="display-name">Name</label><input id="display-name" className="text-input" value={displayName} onChange={e => setDisplayName(e.target.value)} autoComplete="name" required /></>}
+      {verificationSent ? <><p className="auth-copy">Enter the verification code sent to {email.trim()}.</p><label className="auth-label" htmlFor="verification-code">Verification code</label><input id="verification-code" className="text-input verification-input" inputMode="numeric" pattern="[0-9]*" maxLength={8} value={verificationCode} onChange={e => setVerificationCode(e.target.value.replace(/\D/g, ''))} autoComplete="one-time-code" required /></> : <><>{mode === 'register' && <><label className="auth-label" htmlFor="display-name">Name</label><input id="display-name" className="text-input" value={displayName} onChange={e => setDisplayName(e.target.value)} autoComplete="name" required /></>}</>
       {mode === 'register' && <><label className="auth-label" htmlFor="username">Username</label><div className="auth-username"><span>@</span><input id="username" className="text-input" value={username} onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._@]/g, ''))} autoComplete="username" aria-describedby="username-hint" required /></div><p id="username-hint" className={`auth-status ${usernameState}`}>{usernameState === 'available' ? `✓ @${normalizedUsername} available` : usernameState === 'taken' ? `@${normalizedUsername} is already taken` : '3–20 lowercase characters, numbers, dots or underscores'}</p></>}
       <label className="auth-label" htmlFor="email">Email</label><input id="email" className="text-input" type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" required />
       {mode !== 'forgot' && mode !== 'recovery' && <><label className="auth-label" htmlFor="password">Password</label><div className="auth-password"><input id="password" className="text-input" type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" minLength={6} required /><button type="button" className="password-action" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Hide password' : 'Show password'}><span className="sr-only">{showPassword ? 'Hide password' : 'Show password'}</span><span aria-hidden="true">{showPassword ? 'Hide' : 'Show'}</span></button></div></>}
-      {mode === 'recovery' && <><label className="auth-label" htmlFor="password">New password</label><div className="auth-password"><input id="password" className="text-input" type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password" minLength={6} required /><button type="button" className="password-action" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Hide password' : 'Show password'}><span className="sr-only">{showPassword ? 'Hide password' : 'Show password'}</span><span aria-hidden="true">{showPassword ? 'Hide' : 'Show'}</span></button></div></>}
+      {mode === 'recovery' && <><label className="auth-label" htmlFor="password">New password</label><div className="auth-password"><input id="password" className="text-input" type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password" minLength={6} required /><button type="button" className="password-action" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Hide password' : 'Show password'}><span className="sr-only">{showPassword ? 'Hide password' : 'Show password'}</span><span aria-hidden="true">{showPassword ? 'Hide' : 'Show'}</span></button></div></>}</>}
       {mode === 'login' && <button type="button" className="auth-link auth-forgot" onClick={() => setMode('forgot')}>Forgot password</button>}
       {error && <p className="form-error auth-message" role="alert">{error}</p>}{message && <p className="auth-success" role="status">{message}</p>}
-      <button className="primary-button auth-submit" type="submit" disabled={busy}>{busy ? 'Working…' : mode === 'login' ? 'Continue' : mode === 'register' ? 'Create account' : mode === 'recovery' ? 'Update password' : 'Send reset link'}</button>
+      <button className="primary-button auth-submit" type="submit" disabled={busy}>{busy ? 'Working…' : verificationSent ? 'Verify email' : mode === 'login' ? 'Continue' : mode === 'register' ? 'Create account' : mode === 'recovery' ? 'Update password' : 'Send reset link'}</button>
     </form>
-    {mode !== 'recovery' && <p className="auth-switch">{mode === 'forgot' ? <button className="auth-link" onClick={() => setMode('login')}>Back to sign in</button> : mode === 'login' ? <>Don't have an account? <button className="auth-link" onClick={() => setMode('register')}>Create account</button></> : <>Already have an account? <button className="auth-link" onClick={() => setMode('login')}>Sign in</button></>}</p>}
+    {verificationSent ? <p className="auth-switch"><button type="button" className="auth-link" onClick={resendVerificationCode} disabled={busy}>Resend code</button> · <button type="button" className="auth-link" onClick={() => { setVerificationSent(false); setMode('register'); setError(''); setMessage('') }}>Change email</button></p> : mode !== 'recovery' && <p className="auth-switch">{mode === 'forgot' ? <button className="auth-link" onClick={() => setMode('login')}>Back to sign in</button> : mode === 'login' ? <>Don't have an account? <button className="auth-link" onClick={() => setMode('register')}>Create account</button></> : <>Already have an account? <button className="auth-link" onClick={() => setMode('login')}>Sign in</button></>}</p>}
   </section></main>
 }
 

@@ -378,6 +378,7 @@ body { overflow: hidden; }
 .auth-status { min-height: 13px; margin-top: 6px; color: var(--text-faint); font-family: var(--mono); font-size: 8px; }
 .auth-status.available, .auth-success { color: var(--amber); }
 .auth-status.taken, .auth-message { color: #d9826b; }
+.verification-input { font-family: var(--mono); font-size: 18px !important; letter-spacing: .22em; text-align: center; }
 .auth-password .password-action { right: 3px; width: 48px; height: 36px; font-family: var(--mono); font-size: 8px; }
 .auth-link { border: 0; color: var(--amber); background: transparent; padding: 0; font: inherit; cursor: pointer; }
 .auth-link:hover { color: var(--text); }
