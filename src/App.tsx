@@ -612,6 +612,7 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
   const micContextRef = useRef<AudioContext | null>(null)
   const screenStreamRef = useRef<MediaStream | null>(null)
   const [mediaStatus, setMediaStatus] = useState('Preparing local media…')
+  const [permissionType, setPermissionType] = useState<'microphone' | 'screen' | null>(null)
   const [participantCount, setParticipantCount] = useState(1)
   const [remotePeerIds, setRemotePeerIds] = useState<string[]>([])
   const [remotePeerNames, setRemotePeerNames] = useState<Record<string, string>>({})
@@ -626,6 +627,7 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
   const speakingDetectorsRef = useRef(new Map<string, SpeakingDetector>())
   const speakingTimerRef = useRef<number | null>(null)
   const speakingContextRef = useRef<AudioContext | null>(null)
+  const microphoneRequestRef = useRef(0)
   const mutedRef = useRef(muted)
   const realtimeRef = useRef<RealtimeRoom | null>(null)
   const [localScreenStream, setLocalScreenStream] = useState<MediaStream | null>(null)
@@ -690,36 +692,39 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
     speakingContextRef.current = null
   }
 
+  const requestMicrophone = async () => {
+    const requestId = ++microphoneRequestRef.current
+    if (!navigator.mediaDevices?.getUserMedia) { setMediaStatus('Local media unavailable'); return }
+    setPermissionType(null)
+    try {
+      const configuredInputDevice = localStorage.getItem('signal.audio.inputDeviceId') || ''
+      const noiseReduction = localStorage.getItem('signal.audio.noiseReduction') !== 'false'
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: configuredInputDevice ? { exact: configuredInputDevice } : undefined, echoCancellation: noiseReduction, noiseSuppression: noiseReduction, autoGainControl: true } })
+      if (requestId !== microphoneRequestRef.current) { stream.getTracks().forEach((track) => track.stop()); return }
+      const context = new AudioContext()
+      const source = context.createMediaStreamSource(stream)
+      const gain = context.createGain()
+      const destination = context.createMediaStreamDestination()
+      gain.gain.value = Number(localStorage.getItem('signal.audio.inputVolume') || 100) / 100
+      source.connect(gain).connect(destination)
+      const analyser = context.createAnalyser()
+      analyser.fftSize = 256
+      source.connect(analyser)
+      speakingDetectorsRef.current.set('local', { source, analyser, samples: new Uint8Array(new ArrayBuffer(analyser.fftSize)), track: stream.getAudioTracks()[0], speaking: false, silentSince: null })
+      startSpeakingMonitor()
+      const processedStream = new MediaStream(destination.stream.getAudioTracks())
+      rawMicStreamRef.current = stream
+      micContextRef.current = context
+      localStreamRef.current = processedStream
+      realtimeRef.current?.setLocalStream(processedStream)
+      setPermissionType(null)
+      setMediaStatus('Microphone ready')
+    } catch { setPermissionType('microphone'); setMediaStatus('Microphone permission needed') }
+  }
+
   useEffect(() => {
-    let cancelled = false
-    const prepareMicrophone = async () => {
-      if (!navigator.mediaDevices?.getUserMedia) { setMediaStatus('Local media unavailable'); return }
-      try {
-        const configuredInputDevice = localStorage.getItem('signal.audio.inputDeviceId') || ''
-        const noiseReduction = localStorage.getItem('signal.audio.noiseReduction') !== 'false'
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: configuredInputDevice ? { exact: configuredInputDevice } : undefined, echoCancellation: noiseReduction, noiseSuppression: noiseReduction, autoGainControl: true } })
-        if (cancelled) { stream.getTracks().forEach((track) => track.stop()); return }
-        const context = new AudioContext()
-        const source = context.createMediaStreamSource(stream)
-        const gain = context.createGain()
-        const destination = context.createMediaStreamDestination()
-        gain.gain.value = Number(localStorage.getItem('signal.audio.inputVolume') || 100) / 100
-        source.connect(gain).connect(destination)
-        const analyser = context.createAnalyser()
-        analyser.fftSize = 256
-        source.connect(analyser)
-        speakingDetectorsRef.current.set('local', { source, analyser, samples: new Uint8Array(new ArrayBuffer(analyser.fftSize)), track: stream.getAudioTracks()[0], speaking: false, silentSince: null })
-        startSpeakingMonitor()
-        const processedStream = new MediaStream(destination.stream.getAudioTracks())
-        rawMicStreamRef.current = stream
-        micContextRef.current = context
-        localStreamRef.current = processedStream
-        realtimeRef.current?.setLocalStream(processedStream)
-        setMediaStatus('Microphone ready')
-      } catch { setMediaStatus('Microphone permission needed') }
-    }
-    prepareMicrophone()
-    return () => { cancelled = true; stopSpeakingMonitor(); localStreamRef.current?.getTracks().forEach((track) => track.stop()); rawMicStreamRef.current?.getTracks().forEach((track) => track.stop()); micContextRef.current?.close(); screenStreamRef.current?.getTracks().forEach((track) => track.stop()); realtimeRef.current?.setScreenStream(null) }
+    void requestMicrophone()
+    return () => { microphoneRequestRef.current += 1; stopSpeakingMonitor(); localStreamRef.current?.getTracks().forEach((track) => track.stop()); rawMicStreamRef.current?.getTracks().forEach((track) => track.stop()); micContextRef.current?.close(); screenStreamRef.current?.getTracks().forEach((track) => track.stop()); realtimeRef.current?.setScreenStream(null) }
   }, [])
 
   useEffect(() => {
@@ -836,6 +841,7 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
     if (!navigator.mediaDevices?.getDisplayMedia) { setMediaStatus('Screen capture unavailable'); return }
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 30 } }, audio: false })
+      setPermissionType(null)
       screenStreamRef.current = stream
       setLocalScreenStream(stream)
       realtimeRef.current?.setScreenStream(stream)
@@ -846,7 +852,7 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
       console.info('[SCREEN] local screen stage active')
       setMediaStatus('Screen capture active')
       onShare()
-    } catch { devLog('SCREEN', 'screen capture failed or cancelled'); setMediaStatus('Couldn\'t start screen sharing.') }
+    } catch { setPermissionType('screen'); devLog('SCREEN', 'screen capture failed or cancelled'); setMediaStatus('Screen permission needed') }
   }
 
   const uniqueRemotePeerIds = remotePeerIds.filter((peerId, index, ids) => ids.findIndex((candidate) => (remotePeerUsers[candidate] || candidate) === (remotePeerUsers[peerId] || peerId)) === index)
@@ -858,7 +864,7 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
   return <section className="call-view">
     <div className="call-header">
       <div><p className="eyebrow">Room {room.code}</p><h1>{room.name}</h1></div>
-      <div className="call-header-meta"><span className="connection-pill" aria-label="Connected"><span className="status-led" /><span className="sr-only">Connected</span></span><span className="media-status">{mediaStatus}</span><span className="participant-count">{String(participantCount).padStart(2, '0')} participants</span><div className="call-actions-wrap"><button className="icon-button" aria-label="Room actions" aria-expanded={showActions} onClick={() => setShowActions(!showActions)}><Icon name="more" /></button>{showActions && <div className="room-actions-menu call-actions-menu"><button onClick={onInvite}>Invite to room</button><button onClick={onLeave}>Leave call</button></div>}</div></div>
+      <div className="call-header-meta"><span className="connection-pill" aria-label="Connected"><span className="status-led" /><span className="sr-only">Connected</span></span><span className="media-status">{mediaStatus}</span>{permissionType && <button className="text-button permission-retry-button" type="button" onClick={() => permissionType === 'microphone' ? void requestMicrophone() : void toggleScreenShare()}>Try permission again</button>}<span className="participant-count">{String(participantCount).padStart(2, '0')} participants</span><div className="call-actions-wrap"><button className="icon-button" aria-label="Room actions" aria-expanded={showActions} onClick={() => setShowActions(!showActions)}><Icon name="more" /></button>{showActions && <div className="room-actions-menu call-actions-menu"><button onClick={onInvite}>Invite to room</button><button onClick={onLeave}>Leave call</button></div>}</div></div>
     </div>
     <div ref={screenStageRef} className={`screen-stage ${hasScreenShare ? 'is-sharing' : ''}`}>
       <div className="stage-grid" />
