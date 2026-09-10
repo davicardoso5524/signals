@@ -27,9 +27,11 @@ type PeerState = {
   remoteStreams: Set<MediaStream>
 }
 
-const devLog = (scope: string, message: string, detail?: unknown) => {
-  if (import.meta.env.DEV) console.info(`[${scope}] ${message}`, detail ?? '')
-}
+const shortId = (value: string) => value ? value.slice(0, 8) : 'none'
+const signalLog = (message: string, detail?: Record<string, unknown>) => console.info(`[SIGNAL] ${message}`, detail ?? '')
+const webrtcLog = (message: string, detail?: Record<string, unknown>) => console.info(`[WEBRTC] ${message}`, detail ?? '')
+const iceLog = (message: string, detail?: Record<string, unknown>) => console.info(`[ICE] ${message}`, detail ?? '')
+const screenLog = (message: string, detail?: Record<string, unknown>) => console.info(`[SCREEN] ${message}`, detail ?? '')
 
 export class RealtimeRoom {
   private socket: WebSocket | null = null
@@ -54,13 +56,13 @@ export class RealtimeRoom {
     this.userId = userId
     this.iceServers = await getIceServers(accessToken)
     this.events.status('Connecting to signaling')
-    devLog('SIGNAL', 'connecting', { roomId })
+    signalLog('connecting', { room: shortId(roomId) })
     await new Promise<void>((resolve, reject) => {
       const socket = new WebSocket(signalingUrl)
       this.socket = socket
-      socket.onopen = () => { socket.send(JSON.stringify({ type: 'join', roomId, peerId: this.peerId, accessToken, displayName })); devLog('SIGNAL', 'join sent', { roomId }); resolve() }
-      socket.onerror = () => reject(new Error('Signaling connection failed'))
-      socket.onclose = () => { devLog('SIGNAL', 'socket closed', { roomId }); this.events.status('Signaling disconnected') }
+      socket.onopen = () => { signalLog('connected'); socket.send(JSON.stringify({ type: 'join', roomId, peerId: this.peerId, accessToken, displayName })); signalLog('join sent', { room: shortId(roomId) }); resolve() }
+      socket.onerror = () => { signalLog('socket error'); reject(new Error('Signaling connection failed')) }
+      socket.onclose = () => { signalLog('socket closed'); this.events.status('Signaling disconnected') }
       socket.onmessage = (event) => { void this.handleMessage(JSON.parse(event.data)) }
     })
   }
@@ -68,7 +70,7 @@ export class RealtimeRoom {
   setLocalStream(stream: MediaStream) {
     this.localStream = stream
     for (const state of this.peers.values()) this.addAudioTracks(state.connection, stream)
-    devLog('WEBRTC', 'local microphone stream set')
+    webrtcLog('local microphone stream set')
   }
 
   setScreenStream(stream: MediaStream | null) {
@@ -76,8 +78,8 @@ export class RealtimeRoom {
     const videoTrack = stream?.getVideoTracks()[0] || null
     for (const [peerId, state] of this.peers) {
       void state.videoTransceiver.sender.replaceTrack(videoTrack).then(() => {
-        devLog('SCREEN', videoTrack ? 'local screen track added' : 'local screen track removed', { peerId })
-      }).catch((error) => devLog('SCREEN', 'failed to replace local screen track', { peerId, error: error instanceof Error ? error.message : 'unknown error' }))
+        screenLog(videoTrack ? 'local screen track added' : 'local screen track removed', { peer: shortId(peerId) })
+      }).catch((error) => screenLog('failed to replace local screen track', { peer: shortId(peerId), error: error instanceof Error ? error.message : 'unknown error' }))
     }
   }
 
@@ -89,7 +91,7 @@ export class RealtimeRoom {
       state.connection.onicecandidate = null
       state.connection.onnegotiationneeded = null
       state.connection.close()
-      devLog('WEBRTC', 'peer connection closed', { peerId })
+      webrtcLog('peer connection closed', { peer: shortId(peerId) })
     }
     this.peers.clear()
     this.peerNames.clear()
@@ -121,7 +123,7 @@ export class RealtimeRoom {
   }
 
   private createPeer(peerId: string, initiator: boolean, displayName = 'Participant', userId = '') {
-    if (peerId === this.peerId || (userId && userId === this.userId)) { devLog('WEBRTC', 'ignoring self peer'); return null }
+    if (peerId === this.peerId || (userId && userId === this.userId)) { webrtcLog('ignoring self peer'); return null }
     const existing = this.peers.get(peerId)
     if (existing) return existing
     const connection = new RTCPeerConnection({ iceServers: this.iceServers, iceTransportPolicy: getIceTransportPolicy() })
@@ -140,28 +142,29 @@ export class RealtimeRoom {
     this.peers.set(peerId, state)
     this.peerNames.set(peerId, displayName || 'Participant')
     this.peerUsers.set(peerId, userId || peerId)
-    devLog('WEBRTC', 'peer created', { peerId, polite: state.polite })
+    webrtcLog('remote peer discovered', { peer: shortId(peerId) })
+    webrtcLog('peer created', { peer: shortId(peerId) })
     if (this.localStream) this.addAudioTracks(connection, this.localStream)
     if (this.screenStream) void state.videoTransceiver.sender.replaceTrack(this.screenStream.getVideoTracks()[0] || null)
-    connection.onicecandidate = (event) => { if (event.candidate) { devLog('ICE', `peer ${peerId} candidate type=${event.candidate.type || 'unknown'}`); this.sendSignal(peerId, { candidate: event.candidate.toJSON() }) } }
+    connection.onicecandidate = (event) => { if (event.candidate) { iceLog('local candidate generated', { peer: shortId(peerId), type: event.candidate.type || 'unknown' }); this.sendSignal(peerId, { candidate: event.candidate.toJSON() }) } }
     connection.onnegotiationneeded = () => { void this.negotiate(peerId, state) }
     connection.ontrack = (event) => {
-      if (state.userId && state.userId === this.userId) { devLog('WEBRTC', 'ignoring self media track'); return }
+      if (state.userId && state.userId === this.userId) { webrtcLog('ignoring self media track'); return }
       const stream = event.streams[0] || new MediaStream([event.track])
       state.remoteStreams.add(stream)
-      if (event.track.kind === 'audio') { devLog('WEBRTC', 'remote audio track received', { peerId }); this.events.remoteAudio(stream, peerId) }
-      if (event.track.kind === 'video') { devLog('SCREEN', 'remote screen track received', { peerId }); this.events.remoteVideo(stream, peerId) }
+      if (event.track.kind === 'audio') { webrtcLog('remote audio track received', { peer: shortId(peerId) }); this.events.remoteAudio(stream, peerId) }
+      if (event.track.kind === 'video') { screenLog('remote screen track received', { peer: shortId(peerId) }); this.events.remoteVideo(stream, peerId) }
       event.track.onended = () => { state.remoteStreams.delete(stream); if (event.track.kind === 'audio') this.events.remoteAudioEnded(peerId); if (event.track.kind === 'video') this.events.remoteVideoEnded(peerId) }
     }
     connection.onconnectionstatechange = () => {
-      devLog('WEBRTC', `peer ${peerId} connectionState=${connection.connectionState}`)
+      webrtcLog(`connectionState=${connection.connectionState}`, { peer: shortId(peerId) })
       if (connection.connectionState === 'connected') { this.connectedPeers.add(peerId); this.notifyParticipants(); this.events.status('P2P connected') }
       if (connection.connectionState === 'disconnected' || connection.connectionState === 'failed' || connection.connectionState === 'closed') { this.connectedPeers.delete(peerId); this.notifyParticipants() }
       if (connection.connectionState === 'failed') this.events.status('P2P connection failed')
     }
-    connection.oniceconnectionstatechange = () => devLog('ICE', `peer ${peerId} iceConnectionState=${connection.iceConnectionState}`)
-    connection.onsignalingstatechange = () => devLog('WEBRTC', `peer ${peerId} signalingState=${connection.signalingState}`)
-    if (initiator) devLog('WEBRTC', 'peer marked as initial offer candidate', { peerId, polite: state.polite })
+    connection.oniceconnectionstatechange = () => iceLog(`iceConnectionState=${connection.iceConnectionState}`, { peer: shortId(peerId) })
+    connection.onsignalingstatechange = () => webrtcLog(`signalingState=${connection.signalingState}`, { peer: shortId(peerId) })
+    if (initiator) webrtcLog('initial negotiation candidate', { peer: shortId(peerId) })
     return state
   }
 
@@ -170,30 +173,32 @@ export class RealtimeRoom {
     if (state.makingOffer || connection.signalingState !== 'stable') return
     try {
       state.makingOffer = true
+      webrtcLog('initial negotiation started', { peer: shortId(peerId) })
       await connection.setLocalDescription()
-      if (connection.localDescription) { devLog('WEBRTC', 'sending description', { peerId, type: connection.localDescription.type }); this.sendSignal(peerId, { description: connection.localDescription }) }
+      if (connection.localDescription) { webrtcLog(`${connection.localDescription.type} sent`, { peer: shortId(peerId) }); this.sendSignal(peerId, { description: connection.localDescription }) }
     } catch (error) {
-      devLog('WEBRTC', 'negotiation failed', { peerId, error: error instanceof Error ? error.message : 'unknown error' })
+      webrtcLog('negotiation failed', { peer: shortId(peerId), error: error instanceof Error ? error.message : 'unknown error' })
     } finally { state.makingOffer = false }
   }
 
   private async flushCandidates(state: PeerState, peerId: string) {
     const candidates = state.pendingCandidates.splice(0)
     for (const candidate of candidates) {
-      try { await state.connection.addIceCandidate(candidate); devLog('ICE', 'queued candidate applied', { peerId }) }
-      catch (error) { devLog('ICE', 'queued candidate failed', { peerId, error: error instanceof Error ? error.message : 'unknown error' }) }
+      try { await state.connection.addIceCandidate(candidate); iceLog('queued remote candidate applied', { peer: shortId(peerId) }) }
+      catch (error) { iceLog('queued remote candidate failed', { peer: shortId(peerId), error: error instanceof Error ? error.message : 'unknown error' }) }
     }
   }
 
   private sendSignal(target: string, payload: SignalPayload) { if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify({ type: 'signal', roomId: this.roomId, peerId: this.peerId, target, payload })) }
 
   private async handleMessage(message: { type: string; peers?: string[]; peerInfo?: Array<{ peerId: string; userId?: string; displayName?: string }>; peerId?: string; userId?: string; displayName?: string; from?: string; payload?: SignalPayload }) {
-    if (message.type === 'room-peers') { const peerInfo: Array<{ peerId: string; userId?: string; displayName?: string }> = message.peerInfo || (message.peers || []).map((peerId) => ({ peerId })); for (const peer of peerInfo) this.createPeer(peer.peerId, true, peer.displayName, peer.userId); this.notifyPeerIds(); this.notifyParticipants(); this.events.status(peerInfo.length ? 'Negotiating P2P' : 'Waiting for another peer'); return }
-    if (message.type === 'peer-joined' && message.peerId) { this.createPeer(message.peerId, false, message.displayName, message.userId); this.notifyPeerIds(); return }
-    if (message.type === 'peer-left' && message.peerId) { const state = this.peers.get(message.peerId); state?.connection.close(); state?.pendingCandidates.splice(0); state?.remoteStreams.clear(); this.peers.delete(message.peerId); this.peerNames.delete(message.peerId); this.peerUsers.delete(message.peerId); this.connectedPeers.delete(message.peerId); this.notifyPeerIds(); this.notifyParticipants(); devLog('WEBRTC', 'peer left and state cleared', { peerId: message.peerId }); return }
+    if (message.type === 'join-accepted') { signalLog('join accepted', { room: shortId(this.roomId) }); return }
+    if (message.type === 'room-peers') { const peerInfo: Array<{ peerId: string; userId?: string; displayName?: string }> = message.peerInfo || (message.peers || []).map((peerId) => ({ peerId })); signalLog('peers received', { count: peerInfo.length }); for (const peer of peerInfo) this.createPeer(peer.peerId, true, peer.displayName, peer.userId); this.notifyPeerIds(); this.notifyParticipants(); this.events.status(peerInfo.length ? 'Negotiating P2P' : 'Waiting for another peer'); return }
+    if (message.type === 'peer-joined' && message.peerId) { signalLog('peer joined', { peer: shortId(message.peerId) }); this.createPeer(message.peerId, false, message.displayName, message.userId); this.notifyPeerIds(); return }
+    if (message.type === 'peer-left' && message.peerId) { const state = this.peers.get(message.peerId); state?.connection.close(); state?.pendingCandidates.splice(0); state?.remoteStreams.clear(); this.peers.delete(message.peerId); this.peerNames.delete(message.peerId); this.peerUsers.delete(message.peerId); this.connectedPeers.delete(message.peerId); this.notifyPeerIds(); this.notifyParticipants(); webrtcLog('peer left and state cleared', { peer: shortId(message.peerId) }); return }
     if (message.type !== 'signal' || !message.from || !message.payload) return
     const hadPeer = this.peers.has(message.from)
-    if (message.from === this.peerId) { devLog('WEBRTC', 'ignoring self peer'); return }
+    if (message.from === this.peerId) { webrtcLog('ignoring self peer'); return }
     const state = this.createPeer(message.from, false)
     if (!state) return
     if (!hadPeer) this.notifyPeerIds()
@@ -204,30 +209,30 @@ export class RealtimeRoom {
       const readyForOffer = !state.makingOffer && (connection.signalingState === 'stable' || state.isSettingRemoteAnswerPending)
       const offerCollision = description.type === 'offer' && !readyForOffer
       state.ignoreOffer = !state.polite && offerCollision
-      if (state.ignoreOffer) { devLog('WEBRTC', 'ignored colliding offer', { peerId: message.from }); return }
+      if (state.ignoreOffer) { webrtcLog('ignored colliding offer', { peer: shortId(message.from) }); return }
       try {
         if (offerCollision && state.polite) await connection.setLocalDescription({ type: 'rollback' })
         state.isSettingRemoteAnswerPending = description.type === 'answer'
         await connection.setRemoteDescription(description)
         state.isSettingRemoteAnswerPending = false
-        devLog('WEBRTC', 'remote description applied', { peerId: message.from, type: description.type })
+        webrtcLog(`${description.type} received`, { peer: shortId(message.from) })
         await this.flushCandidates(state, message.from)
         if (description.type === 'offer') {
           await connection.setLocalDescription()
-          if (connection.localDescription) this.sendSignal(message.from, { description: connection.localDescription })
+          if (connection.localDescription) { webrtcLog('answer sent', { peer: shortId(message.from) }); this.sendSignal(message.from, { description: connection.localDescription }) }
         }
       } catch (error) {
         state.isSettingRemoteAnswerPending = false
-        devLog('WEBRTC', 'remote description failed', { peerId: message.from, error: error instanceof Error ? error.message : 'unknown error' })
+        webrtcLog('remote description failed', { peer: shortId(message.from), error: error instanceof Error ? error.message : 'unknown error' })
       }
     }
     const candidate = message.payload.candidate
     if (candidate) {
       if (state.ignoreOffer) return
       if (connection.remoteDescription) {
-        try { await connection.addIceCandidate(candidate); devLog('ICE', 'remote candidate applied', { peerId: message.from }) }
-        catch (error) { devLog('ICE', 'remote candidate failed', { peerId: message.from, error: error instanceof Error ? error.message : 'unknown error' }) }
-      } else { state.pendingCandidates.push(candidate); devLog('ICE', 'remote candidate queued', { peerId: message.from }) }
+        try { await connection.addIceCandidate(candidate); iceLog('remote candidate applied', { peer: shortId(message.from) }) }
+        catch (error) { iceLog('remote candidate failed', { peer: shortId(message.from), error: error instanceof Error ? error.message : 'unknown error' }) }
+      } else { state.pendingCandidates.push(candidate); iceLog('remote candidate queued', { peer: shortId(message.from) }) }
     }
   }
 }

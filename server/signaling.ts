@@ -16,6 +16,7 @@ const turnCredentialTtlSeconds = Number.isFinite(configuredTurnTtl) ? Math.min(8
 const maxMessageBytes = 64 * 1024
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const rooms = new Map<string, Set<Client>>()
+const shortId = (value: string) => value.slice(0, 8)
 const sendJson = (response: ServerResponse, status: number, body: unknown, extraHeaders: Record<string, string> = {}) => {
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization, content-type', ...extraHeaders })
   response.end(JSON.stringify(body))
@@ -73,7 +74,7 @@ const leaveRoom = (client: Client) => {
   peers?.delete(client)
   for (const peer of peers || []) send(peer, { type: 'peer-left', peerId: client.peerId })
   if (peers?.size === 0) rooms.delete(roomId)
-  console.info('[SIGNAL] peer left', { roomId, userId: client.userId })
+  console.info('[SIGNAL] peer left', { room: shortId(roomId), activePeers: peers?.size || 0 })
   client.roomId = undefined
   client.peerId = undefined
   client.userId = undefined
@@ -110,10 +111,10 @@ websocketServer.on('connection', (socket) => {
       if (!user) { console.warn('[SIGNAL] rejected invalid token'); reject(client, 'Signaling authentication failed.'); return }
       const authClient = createClient(supabaseUrl, supabaseKey, { global: { headers: { Authorization: `Bearer ${message.accessToken}` } } })
       const { data: membership, error: membershipError } = await authClient.from('room_members').select('room_id').eq('room_id', message.roomId).eq('user_id', user.id).maybeSingle()
-      if (membershipError || !membership) { console.warn('[SIGNAL] rejected non-member join', { roomId: message.roomId }); reject(client, 'You are not a member of this room.'); return }
+      if (membershipError || !membership) { console.warn('[SIGNAL] rejected non-member join', { room: shortId(message.roomId) }); reject(client, 'You are not a member of this room.'); return }
       const room = rooms.get(message.roomId) || new Set<Client>()
       const previousSession = peersInRoom(message.roomId).find((peer) => peer.userId === user.id)
-      if (previousSession) { console.info('[SIGNAL] replacing previous session for user', { roomId: message.roomId, userId: user.id }); leaveRoom(previousSession); previousSession.close(4000, 'Replaced by newer session') }
+      if (previousSession) { console.info('[SIGNAL] replacing previous session', { room: shortId(message.roomId) }); leaveRoom(previousSession); previousSession.close(4000, 'Replaced by newer session') }
       if (peersInRoom(message.roomId).some((peer) => peer.peerId === message.peerId)) { reject(client, 'Peer connection already exists.'); return }
       const peers = peersInRoom(message.roomId)
       client.roomId = message.roomId
@@ -122,7 +123,9 @@ websocketServer.on('connection', (socket) => {
       client.displayName = message.displayName.trim()
       room.add(client)
       rooms.set(message.roomId, room)
-      console.info('[SIGNAL] authorized room join', { roomId: message.roomId, userId: user.id })
+      console.info('[SIGNAL] room state', { room: shortId(message.roomId), activePeers: room.size, userIds: new Set([...room].map((peer) => peer.userId)).size })
+      console.info('[SIGNAL] authorized room join', { room: shortId(message.roomId) })
+      send(client, { type: 'join-accepted', roomId: message.roomId, peerId: message.peerId })
       send(client, { type: 'room-peers', peers: peers.map((peer) => peer.peerId).filter(Boolean), peerInfo: peers.filter((peer) => peer.peerId).map((peer) => ({ peerId: peer.peerId, userId: peer.userId, displayName: peer.displayName || 'Participant' })) })
       for (const peer of peers) send(peer, { type: 'peer-joined', peerId: message.peerId, userId: client.userId, displayName: client.displayName })
       return

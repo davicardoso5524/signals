@@ -15,6 +15,7 @@ type Person = { id: string; initials: string; name: string; username: string; to
 
 const people: Person[] = []
 const devLog = (scope: string, message: string) => { if (import.meta.env.DEV) console.info(`[${scope}] ${message}`) }
+const shortId = (value: string) => value ? value.slice(0, 8) : 'none'
 const SETTINGS_CHANGED_EVENT = 'signals-settings-changed'
 const notifySettingsChanged = () => window.dispatchEvent(new Event(SETTINGS_CHANGED_EVENT))
 
@@ -135,6 +136,7 @@ function SignalWorkspace() {
       const refreshed = await listRooms()
       const savedRoom = refreshed.find((item) => item.id === joined.id)
       const mappedRoom = savedRoom ? mapRoom(savedRoom) : room
+      console.info('[ROOM] resolved room=' + shortId(mappedRoom.id))
       setRoomList((current) => [mappedRoom, ...current.filter((item) => item.id !== mappedRoom.id)])
       setActiveRoom(mappedRoom)
       setRoomDetail(mappedRoom)
@@ -740,6 +742,7 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
       remoteVideoEnded: (peerId) => setRemoteScreenStreams((current) => { const next = { ...current }; delete next[peerId]; return next }),
     })
     realtimeRef.current = realtime
+    console.info('[ROOM] resolved room=' + shortId(room.id))
     if (!supabase) { setMediaStatus('Supabase is not configured'); return }
     supabase.auth.getSession().then(({ data }) => {
       const accessToken = data.session?.access_token
@@ -797,18 +800,19 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
     try {
       if (document.fullscreenElement) await document.exitFullscreen()
       else await screenStageRef.current?.requestFullscreen()
-    } catch { devLog('WEBRTC', 'fullscreen is unavailable') }
+    } catch { console.info('[SCREEN] fullscreen unavailable') }
   }
 
   const stopScreenShare = () => {
     if (screenStopHandledRef.current) return
     screenStopHandledRef.current = true
     const stream = screenStreamRef.current
+    if (document.fullscreenElement === screenStageRef.current) void document.exitFullscreen()
     screenStreamRef.current = null
     setLocalScreenStream(null)
     stream?.getTracks().forEach((track) => track.stop())
     realtimeRef.current?.setScreenStream(null)
-    devLog('SCREEN', 'local screen share stopped')
+    console.info('[SCREEN] local screen stage inactive')
     setMediaStatus('Microphone ready')
     if (sharing) onShare()
   }
@@ -825,7 +829,7 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
       screenStopHandledRef.current = false
       if ('contentHint' in videoTrack) videoTrack.contentHint = 'detail'
       videoTrack.onended = stopScreenShare
-      devLog('SCREEN', 'local screen track added')
+      console.info('[SCREEN] local screen stage active')
       setMediaStatus('Screen capture active')
       onShare()
     } catch { devLog('SCREEN', 'screen capture failed or cancelled'); setMediaStatus('Couldn\'t start screen sharing.') }
@@ -833,7 +837,9 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
 
   const uniqueRemotePeerIds = remotePeerIds.filter((peerId, index, ids) => ids.findIndex((candidate) => (remotePeerUsers[candidate] || candidate) === (remotePeerUsers[peerId] || peerId)) === index)
   const hasScreenShare = Boolean(localScreenStream || Object.keys(remoteScreenStreams).length)
-  const participantTiles = <div className="participant-tiles"><div className={`participant-tile ${speaking.local ? 'is-speaking' : ''} ${localScreenStream ? 'is-screen-sharing' : ''}`}>{localScreenStream ? <video className="participant-screen-video" ref={(element) => { if (element && element.srcObject !== localScreenStream) { element.srcObject = localScreenStream; void element.play().catch(() => undefined) } }} autoPlay muted playsInline aria-label="Your shared screen" /> : <span className="participant-tile-avatar">{initialsFor(localName)}</span>}<strong>{localName}</strong><small>{localScreenStream ? 'Sharing screen · You' : 'You'}</small></div>{uniqueRemotePeerIds.map((peerId, index) => { const name = remotePeerNames[peerId] || `Participant ${index + 1}`; const screenStream = remoteScreenStreams[peerId]; return <div className={`participant-tile ${speaking[peerId] ? 'is-speaking' : ''} ${screenStream ? 'is-screen-sharing' : ''}`} key={peerId}>{screenStream ? <video className="participant-screen-video" ref={(element) => { if (element && element.srcObject !== screenStream) { element.srcObject = screenStream; void element.play().catch(() => undefined) } }} autoPlay muted playsInline aria-label={`${name}'s shared screen`} /> : <span className="participant-tile-avatar">{initialsFor(name)}</span>}<strong>{name}</strong><small>{screenStream ? 'Sharing screen' : 'Connected'}</small></div> })}</div>
+  const participantTiles = <div className="participant-tiles">{!localScreenStream && <div className={`participant-tile ${speaking.local ? 'is-speaking' : ''}`}><span className="participant-tile-avatar">{initialsFor(localName)}</span><strong>{localName}</strong><small>You</small></div>}{uniqueRemotePeerIds.map((peerId, index) => { const name = remotePeerNames[peerId] || `Participant ${index + 1}`; const screenStream = remoteScreenStreams[peerId]; return !screenStream && <div className={`participant-tile ${speaking[peerId] ? 'is-speaking' : ''}`} key={peerId}><span className="participant-tile-avatar">{initialsFor(name)}</span><strong>{name}</strong><small>Connected</small></div> })}</div>
+  const remotePresentation = Object.entries(remoteScreenStreams)[0]
+  const screenPresentation = localScreenStream ? { stream: localScreenStream, name: localName, label: 'Sharing screen · You' } : remotePresentation ? { stream: remotePresentation[1], name: remotePeerNames[remotePresentation[0]] || 'Participant', label: 'Sharing screen' } : null
 
   return <section className="call-view">
     <div className="call-header">
@@ -842,7 +848,7 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
     </div>
     <div ref={screenStageRef} className={`screen-stage ${hasScreenShare ? 'is-sharing' : ''}`}>
       <div className="stage-grid" />
-      <div className="stage-center">{participantTiles}</div>
+      <div className={`stage-center ${screenPresentation ? 'has-screen-presentation' : ''}`}>{screenPresentation ? <><div className="screen-presentation"><video ref={(element) => { if (element && element.srcObject !== screenPresentation.stream) { element.srcObject = screenPresentation.stream; void element.play().catch(() => undefined) } }} autoPlay muted playsInline aria-label={`${screenPresentation.name}'s shared screen`} /><div className="screen-presentation-label"><strong>{screenPresentation.name}</strong><span>{screenPresentation.label}</span></div></div>{participantTiles}</> : participantTiles}</div>
       {hasScreenShare && <button className="stage-fullscreen-button" aria-label={fullscreen ? 'Exit fullscreen' : 'Open fullscreen'} onClick={toggleFullscreen}><Icon name="fullscreen" size={17} /></button>}
     </div>
     <div className="participant-strip" aria-live="polite"><div className="participant"><strong>{participantCount} {participantCount === 1 ? 'participant' : 'participants'} connected</strong><small>Live room presence</small><span className="signal-bars active"><i /><i /><i /><i /></span></div></div>

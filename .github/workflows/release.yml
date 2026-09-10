@@ -36,6 +36,7 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_AUTH_REDIRECT_URL: ${{ secrets.VITE_AUTH_REDIRECT_URL }}
+          VITE_SIGNALING_URL: wss://signals-signaling.onrender.com
         with:
           tagName: ${{ github.ref_name }}
           releaseName: SIGNALS ${{ github.ref_name }}

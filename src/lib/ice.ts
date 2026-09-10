@@ -5,7 +5,25 @@ const defaultTtlSeconds = 86400
 const refreshRatio = 0.8
 
 export function getSignalingWebSocketUrl() {
-  return import.meta.env.VITE_SIGNALING_URL || (import.meta.env.DEV ? 'ws://127.0.0.1:8787' : '')
+  const configured = import.meta.env.VITE_SIGNALING_URL?.trim()
+  if (import.meta.env.PROD) {
+    if (!configured) {
+      console.error('[SIGNAL] production signaling URL is missing')
+      return ''
+    }
+    try {
+      const url = new URL(configured)
+      if (url.protocol !== 'wss:' || ['localhost', '127.0.0.1', '::1'].includes(url.hostname)) {
+        console.error('[SIGNAL] production signaling URL is invalid')
+        return ''
+      }
+    } catch {
+      console.error('[SIGNAL] production signaling URL is invalid')
+      return ''
+    }
+    return configured
+  }
+  return configured || 'ws://127.0.0.1:8787'
 }
 
 export function getSignalingHttpUrl() {
