@@ -34,6 +34,7 @@ const signalLog = (message: string, detail?: Record<string, unknown>) => console
 const webrtcLog = (message: string, detail?: Record<string, unknown>) => console.info(`[WEBRTC] ${message}`, detail ?? '')
 const iceLog = (message: string, detail?: Record<string, unknown>) => console.info(`[ICE] ${message}`, detail ?? '')
 const screenLog = (message: string, detail?: Record<string, unknown>) => console.info(`[SCREEN] ${message}`, detail ?? '')
+const screenStatsLog = (detail: Record<string, unknown>) => { if (import.meta.env.DEV) console.info('[SCREEN-STATS]', detail) }
 
 export class RealtimeRoom {
   private socket: WebSocket | null = null
@@ -49,6 +50,8 @@ export class RealtimeRoom {
   private peerNames = new Map<string, string>()
   private peerUsers = new Map<string, string>()
   private activeParticipantUsers = new Set<string>()
+  private screenStatsTimer: ReturnType<typeof setInterval> | null = null
+  private previousScreenStats = new Map<string, { timestamp: number; bytesSent: number }>()
 
   constructor(events: RealtimeEvents) { this.events = events }
 
@@ -78,6 +81,8 @@ export class RealtimeRoom {
 
   setScreenStream(stream: MediaStream | null) {
     this.screenStream = stream
+    if (stream) this.startScreenStats()
+    else this.stopScreenStats()
     const videoTrack = stream?.getVideoTracks()[0] || null
     for (const [peerId, state] of this.peers) {
       void state.videoTransceiver.sender.replaceTrack(videoTrack).then(() => {
@@ -88,6 +93,7 @@ export class RealtimeRoom {
   }
 
   close() {
+    this.stopScreenStats()
     for (const [peerId, state] of this.peers) {
       state.pendingCandidates.length = 0
       state.remoteStreams.clear()
@@ -129,6 +135,71 @@ export class RealtimeRoom {
 
   private notifyParticipantPresence(addedUserIds: string[] = [], removedUserIds: string[] = [], initial = false) {
     this.events.participantPresence({ addedUserIds, removedUserIds, initial })
+  }
+
+  private startScreenStats() {
+    this.stopScreenStats()
+    void this.logScreenStats()
+    this.screenStatsTimer = setInterval(() => { void this.logScreenStats() }, 1000)
+  }
+
+  private stopScreenStats() {
+    if (this.screenStatsTimer !== null) clearInterval(this.screenStatsTimer)
+    this.screenStatsTimer = null
+    this.previousScreenStats.clear()
+  }
+
+  private async logScreenStats() {
+    if (!this.screenStream) return
+    for (const [peerId, state] of this.peers) {
+      try {
+        const [senderReport, connectionReport] = await Promise.all([state.videoTransceiver.sender.getStats(), state.connection.getStats()])
+        type ScreenStat = RTCStats & Record<string, any>
+        const stats = Array.from(new Map([...senderReport.values(), ...connectionReport.values()].map((value) => [value.id, value])).values()).map((value) => value as ScreenStat)
+        const statsById = new Map(stats.map((stat) => [stat.id, stat]))
+        const outbound = stats.find((stat) => stat.type === 'outbound-rtp' && (stat.kind === 'video' || stat.mediaType === 'video'))
+        const selectedPair = stats.find((stat) => stat.type === 'candidate-pair' && stat.state === 'succeeded' && (stat.nominated === true || stat.selected === true))
+        if (!outbound) continue
+        const timestamp = Number(outbound.timestamp || Date.now())
+        const bytesSent = Number(outbound.bytesSent || 0)
+        const previous = this.previousScreenStats.get(peerId)
+        const elapsed = previous ? timestamp - previous.timestamp : 0
+        const bitrateKbps = previous && elapsed > 0 ? ((bytesSent - previous.bytesSent) * 8) / elapsed : null
+        this.previousScreenStats.set(peerId, { timestamp, bytesSent })
+        const localCandidate = selectedPair?.localCandidateId ? statsById.get(String(selectedPair.localCandidateId)) : null
+        const remoteCandidate = selectedPair?.remoteCandidateId ? statsById.get(String(selectedPair.remoteCandidateId)) : null
+        const codec = outbound.codecId ? statsById.get(String(outbound.codecId)) : null
+        const route = localCandidate?.candidateType ? String(localCandidate.candidateType) : 'unknown'
+        const relayProtocol = localCandidate?.relayProtocol ? `/${String(localCandidate.relayProtocol)}` : ''
+        screenStatsLog({
+          peer: shortId(peerId),
+          fps: outbound.framesPerSecond ?? null,
+          resolution: `${outbound.frameWidth || 0}x${outbound.frameHeight || 0}`,
+          bitrateKbps: bitrateKbps === null ? null : Math.round(Math.max(0, bitrateKbps)),
+          bytesSent,
+          packetsSent: outbound.packetsSent ?? null,
+          framesEncoded: outbound.framesEncoded ?? null,
+          framesSent: outbound.framesSent ?? null,
+          totalEncodeTime: outbound.totalEncodeTime ?? null,
+          qualityLimitationReason: outbound.qualityLimitationReason ?? 'none',
+          qualityLimitationDurations: outbound.qualityLimitationDurations ?? null,
+          nackCount: outbound.nackCount ?? null,
+          pliCount: outbound.pliCount ?? null,
+          firCount: outbound.firCount ?? null,
+          retransmittedPacketsSent: outbound.retransmittedPacketsSent ?? null,
+          retransmittedBytesSent: outbound.retransmittedBytesSent ?? null,
+          availableOutgoingBitrate: selectedPair?.availableOutgoingBitrate ?? null,
+          rttMs: selectedPair?.currentRoundTripTime === undefined ? null : Math.round(Number(selectedPair.currentRoundTripTime) * 1000),
+          route: `${route}${relayProtocol}`,
+          remoteCandidateType: remoteCandidate?.candidateType ?? null,
+          codec: codec?.mimeType ?? null,
+          clockRate: codec?.clockRate ?? null,
+          payloadType: codec?.payloadType ?? null,
+        })
+      } catch (error) {
+        screenStatsLog({ peer: shortId(peerId), error: error instanceof Error ? error.message : 'stats unavailable' })
+      }
+    }
   }
 
   private createPeer(peerId: string, initiator: boolean, displayName = 'Participant', userId = '') {
