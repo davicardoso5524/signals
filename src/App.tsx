@@ -628,7 +628,9 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
   const [outputMuted, setOutputMuted] = useState(false)
   const outputMutedRef = useRef(false)
   const remoteAudioRef = useRef(new Map<string, HTMLAudioElement>())
+  const remoteScreenStreamsRef = useRef<Record<string, MediaStream>>({})
   const screenStageRef = useRef<HTMLDivElement | null>(null)
+  const screenVideoRef = useRef<HTMLVideoElement | null>(null)
   const [fullscreen, setFullscreen] = useState(false)
   const [showActions, setShowActions] = useState(false)
   const [speaking, setSpeaking] = useState<Record<string, boolean>>({})
@@ -641,12 +643,24 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
   const [localScreenStream, setLocalScreenStream] = useState<MediaStream | null>(null)
   const [remoteScreenStreams, setRemoteScreenStreams] = useState<Record<string, MediaStream>>({})
   const screenStopHandledRef = useRef(false)
+  const localJoinSoundPlayedRef = useRef(false)
+  const localLeaveSoundPlayedRef = useRef(false)
 
   const applyOutputSettings = (audio: HTMLAudioElement) => {
     audio.volume = Math.max(0, Math.min(1, Number(localStorage.getItem('signal.audio.volume') || 72) / 100))
     const outputDeviceId = localStorage.getItem('signal.audio.outputDeviceId') || ''
     const sinkAudio = audio as HTMLAudioElement & { setSinkId?: (sinkId: string) => Promise<void> }
     if (outputDeviceId && typeof sinkAudio.setSinkId === 'function') void sinkAudio.setSinkId(outputDeviceId).catch(() => devLog('AUDIO', 'selected output is unavailable'))
+  }
+
+  const playCallSound = (type: 'join' | 'leave' | 'screen-start' | 'screen-stop') => {
+    const audio = new Audio(`/sounds/call-${type}.wav`)
+    audio.preload = 'auto'
+    audio.muted = outputMutedRef.current
+    applyOutputSettings(audio)
+    audio.volume = Math.max(0, Math.min(1, audio.volume * 0.35))
+    audio.addEventListener('ended', () => { audio.removeAttribute('src'); audio.load() }, { once: true })
+    void audio.play().then(() => devLog('CALL', `${type === 'screen-start' ? 'screen start' : type === 'screen-stop' ? 'screen stop' : type} sound played`)).catch(() => devLog('CALL', 'sound playback blocked'))
   }
 
   const removeSpeakingDetector = (key: string) => {
@@ -740,6 +754,12 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
     const realtime = new RealtimeRoom({
       status: (status) => setMediaStatus(status),
       participants: (count) => setParticipantCount(count),
+      callJoined: () => { if (localJoinSoundPlayedRef.current) return; localJoinSoundPlayedRef.current = true; playCallSound('join') },
+      participantPresence: ({ addedUserIds, removedUserIds, initial }) => {
+        if (initial) { devLog('CALL', 'join sound suppressed initial snapshot'); return }
+        addedUserIds.forEach(() => playCallSound('join'))
+        removedUserIds.forEach(() => playCallSound('leave'))
+      },
       peerIds: (ids) => { setRemotePeerIds(ids); setParticipantCount(ids.length + 1) },
       peerNames: (names) => setRemotePeerNames(names),
       peerUsers: (users) => setRemotePeerUsers(users),
@@ -765,8 +785,26 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
         if (audio) audio.srcObject = null
         remoteAudioRef.current.delete(peerId)
       },
-      remoteVideo: (stream, peerId) => setRemoteScreenStreams((current) => ({ ...current, [peerId]: stream })),
-      remoteVideoEnded: (peerId) => { setRemoteScreenStreams((current) => { const next = { ...current }; delete next[peerId]; return next }); if (document.fullscreenElement === screenStageRef.current) void document.exitFullscreen(); console.info('[SCREEN] remote screen stage inactive') },
+      remoteVideo: (stream, peerId) => setRemoteScreenStreams((current) => {
+        if (!current[peerId]) playCallSound('screen-start')
+        const next = { ...current, [peerId]: stream }
+        remoteScreenStreamsRef.current = next
+        return next
+      }),
+      remoteVideoEnded: (peerId) => {
+        const currentStreams = remoteScreenStreamsRef.current
+        const wasActive = Boolean(currentStreams[peerId])
+        const video = screenVideoRef.current
+        if (video && video.srcObject === currentStreams[peerId]) { video.pause(); video.srcObject = null; video.load() }
+        const next = { ...currentStreams }
+        delete next[peerId]
+        remoteScreenStreamsRef.current = next
+        setRemoteScreenStreams(next)
+        if (!wasActive) return
+        playCallSound('screen-stop')
+        if (document.fullscreenElement === screenStageRef.current) void document.exitFullscreen()
+        devLog('SCREEN', 'remote screen stage inactive')
+      },
     })
     realtimeRef.current = realtime
     console.info('[ROOM] resolved room=' + shortId(room.id))
@@ -785,6 +823,7 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
       setRemotePeerNames({})
       setRemotePeerUsers({})
       setRemoteScreenStreams({})
+      remoteScreenStreamsRef.current = {}
       stopSpeakingMonitor()
     }
   }, [room.code])
@@ -835,11 +874,14 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
     screenStopHandledRef.current = true
     const stream = screenStreamRef.current
     if (document.fullscreenElement === screenStageRef.current) void document.exitFullscreen()
+    const video = screenVideoRef.current
+    if (video && video.srcObject === stream) { video.pause(); video.srcObject = null; video.load() }
     screenStreamRef.current = null
     setLocalScreenStream(null)
     stream?.getTracks().forEach((track) => track.stop())
     realtimeRef.current?.setScreenStream(null)
-    console.info('[SCREEN] local screen stage inactive')
+    playCallSound('screen-stop')
+    devLog('SCREEN', 'local screen stage inactive')
     setMediaStatus('Microphone ready')
     if (sharing) onShare()
   }
@@ -857,7 +899,8 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
       screenStopHandledRef.current = false
       if ('contentHint' in videoTrack) videoTrack.contentHint = 'detail'
       videoTrack.onended = stopScreenShare
-      console.info('[SCREEN] local screen stage active')
+      playCallSound('screen-start')
+      devLog('SCREEN', 'local screen stage active')
       setMediaStatus('Screen capture active')
       onShare()
     } catch { setPermissionType('screen'); devLog('SCREEN', 'screen capture failed or cancelled'); setMediaStatus('Screen permission needed') }
@@ -868,19 +911,20 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
   const participantTiles = <div className="participant-tiles">{!localScreenStream && <div className={`participant-tile ${speaking.local ? 'is-speaking' : ''}`}><span className="participant-tile-avatar">{initialsFor(localName)}</span><strong>{localName}</strong><small>You</small></div>}{uniqueRemotePeerIds.map((peerId, index) => { const name = remotePeerNames[peerId] || `Participant ${index + 1}`; const screenStream = remoteScreenStreams[peerId]; return !screenStream && <div className={`participant-tile ${speaking[peerId] ? 'is-speaking' : ''}`} key={peerId}><span className="participant-tile-avatar">{initialsFor(name)}</span><strong>{name}</strong><small>Connected</small></div> })}</div>
   const remotePresentation = Object.entries(remoteScreenStreams)[0]
   const screenPresentation = localScreenStream ? { stream: localScreenStream, name: localName, label: 'Sharing screen · You' } : remotePresentation ? { stream: remotePresentation[1], name: remotePeerNames[remotePresentation[0]] || 'Participant', label: 'Sharing screen' } : null
+  const leaveCall = () => { if (localLeaveSoundPlayedRef.current) return; localLeaveSoundPlayedRef.current = true; playCallSound('leave'); onLeave() }
 
   return <section className="call-view">
     <div className="call-header">
       <div><p className="eyebrow">Room {room.code}</p><h1>{room.name}</h1></div>
-      <div className="call-header-meta"><span className="connection-pill" aria-label="Connected"><span className="status-led" /><span className="sr-only">Connected</span></span><span className="media-status">{mediaStatus}</span>{permissionType && <button className="text-button permission-retry-button" type="button" onClick={() => permissionType === 'microphone' ? void requestMicrophone() : void toggleScreenShare()}>Try permission again</button>}<span className="participant-count">{String(participantCount).padStart(2, '0')} participants</span><div className="call-actions-wrap"><button className="icon-button" aria-label="Room actions" aria-expanded={showActions} onClick={() => setShowActions(!showActions)}><Icon name="more" /></button>{showActions && <div className="room-actions-menu call-actions-menu"><button onClick={onInvite}>Invite to room</button><button onClick={onLeave}>Leave call</button></div>}</div></div>
+      <div className="call-header-meta"><span className="connection-pill" aria-label="Connected"><span className="status-led" /><span className="sr-only">Connected</span></span><span className="media-status">{mediaStatus}</span>{permissionType && <button className="text-button permission-retry-button" type="button" onClick={() => permissionType === 'microphone' ? void requestMicrophone() : void toggleScreenShare()}>Try permission again</button>}<span className="participant-count">{String(participantCount).padStart(2, '0')} participants</span><div className="call-actions-wrap"><button className="icon-button" aria-label="Room actions" aria-expanded={showActions} onClick={() => setShowActions(!showActions)}><Icon name="more" /></button>{showActions && <div className="room-actions-menu call-actions-menu"><button onClick={onInvite}>Invite to room</button><button onClick={leaveCall}>Leave call</button></div>}</div></div>
     </div>
-    <div ref={screenStageRef} className={`screen-stage ${hasScreenShare ? 'is-sharing' : ''}`}>
+      <div ref={screenStageRef} className={`screen-stage ${hasScreenShare ? 'is-sharing' : ''}`}>
       <div className="stage-grid" />
-      <div className={`stage-center ${screenPresentation ? 'has-screen-presentation' : ''}`}>{screenPresentation ? <><div className="screen-presentation"><video ref={(element) => { if (element && element.srcObject !== screenPresentation.stream) { element.srcObject = screenPresentation.stream; void element.play().catch(() => undefined) } }} autoPlay muted playsInline aria-label={`${screenPresentation.name}'s shared screen`} /><div className="screen-presentation-label"><strong>{screenPresentation.name}</strong><span>{screenPresentation.label}</span></div></div>{participantTiles}</> : participantTiles}</div>
+      <div className={`stage-center ${screenPresentation ? 'has-screen-presentation' : ''}`}>{screenPresentation ? <><div className="screen-presentation"><video ref={(element) => { screenVideoRef.current = element; if (element && element.srcObject !== screenPresentation.stream) { element.srcObject = screenPresentation.stream; void element.play().catch(() => undefined) } }} autoPlay muted playsInline aria-label={`${screenPresentation.name}'s shared screen`} /><div className="screen-presentation-label"><strong>{screenPresentation.name}</strong><span>{screenPresentation.label}</span></div></div>{participantTiles}</> : participantTiles}</div>
       {hasScreenShare && <button className="stage-fullscreen-button" aria-label={fullscreen ? 'Exit fullscreen' : 'Open fullscreen'} onClick={toggleFullscreen}><Icon name="fullscreen" size={17} /></button>}
     </div>
     <div className="participant-strip" aria-live="polite"><div className="participant"><strong>{participantCount} {participantCount === 1 ? 'participant' : 'participants'} connected</strong><small>Live room presence</small><span className="signal-bars active"><i /><i /><i /><i /></span></div></div>
-    <div className="call-controls"><ControlButton icon="mic" label={muted ? 'Unmute microphone' : 'Mute microphone'} active={!muted} onClick={onMute} /><ControlButton icon="headphones" label={outputMuted ? 'Unmute headphones' : 'Mute headphones'} active={!outputMuted} onClick={toggleOutput} /><ControlButton icon="screen" label={sharing ? 'Stop sharing' : 'Share screen'} active={sharing} onClick={toggleScreenShare} /><ControlButton icon="invite" label="Invite" onClick={onInvite} /><button className="leave-button" aria-label="Leave call" onClick={onLeave}><Icon name="leave" size={17} /><span>Leave</span></button></div>
+    <div className="call-controls"><ControlButton icon="mic" label={muted ? 'Unmute microphone' : 'Mute microphone'} active={!muted} onClick={onMute} /><ControlButton icon="headphones" label={outputMuted ? 'Unmute headphones' : 'Mute headphones'} active={!outputMuted} onClick={toggleOutput} /><ControlButton icon="screen" label={sharing ? 'Stop sharing' : 'Share screen'} active={sharing} onClick={toggleScreenShare} /><ControlButton icon="invite" label="Invite" onClick={onInvite} /><button className="leave-button" aria-label="Leave call" onClick={leaveCall}><Icon name="leave" size={17} /><span>Leave</span></button></div>
   </section>
 }
 

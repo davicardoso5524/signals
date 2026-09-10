@@ -5,6 +5,8 @@ type SignalPayload = { description?: RTCSessionDescriptionInit; candidate?: RTCI
 type RealtimeEvents = {
   status: (status: string) => void
   participants: (count: number) => void
+  callJoined: () => void
+  participantPresence: (change: { addedUserIds: string[]; removedUserIds: string[]; initial: boolean }) => void
   peerIds: (peerIds: string[]) => void
   peerNames: (peerNames: Record<string, string>) => void
   peerUsers: (peerUsers: Record<string, string>) => void
@@ -46,6 +48,7 @@ export class RealtimeRoom {
   private iceServers: RTCIceServer[] = []
   private peerNames = new Map<string, string>()
   private peerUsers = new Map<string, string>()
+  private activeParticipantUsers = new Set<string>()
 
   constructor(events: RealtimeEvents) { this.events = events }
 
@@ -98,6 +101,7 @@ export class RealtimeRoom {
     this.peerNames.clear()
     this.peerUsers.clear()
     this.connectedPeers.clear()
+    this.activeParticipantUsers.clear()
     this.events.participants(1)
     this.events.peerIds([])
     this.events.peerNames({})
@@ -121,6 +125,10 @@ export class RealtimeRoom {
   private notifyParticipants() {
     const activeUsers = new Set([...this.connectedPeers].map((peerId) => this.peerUsers.get(peerId) || peerId))
     this.events.participants(activeUsers.size + 1)
+  }
+
+  private notifyParticipantPresence(addedUserIds: string[] = [], removedUserIds: string[] = [], initial = false) {
+    this.events.participantPresence({ addedUserIds, removedUserIds, initial })
   }
 
   private createPeer(peerId: string, initiator: boolean, displayName = 'Participant', userId = '') {
@@ -159,7 +167,16 @@ export class RealtimeRoom {
     }
     connection.onconnectionstatechange = () => {
       webrtcLog(`connectionState=${connection.connectionState}`, { peer: shortId(peerId) })
-      if (connection.connectionState === 'connected') { this.connectedPeers.add(peerId); this.notifyParticipants(); this.events.status('P2P connected') }
+      if (connection.connectionState === 'connected') {
+        this.connectedPeers.add(peerId)
+        this.notifyParticipants()
+        const user = this.peerUsers.get(peerId) || peerId
+        if (!this.activeParticipantUsers.has(user)) {
+          this.activeParticipantUsers.add(user)
+          this.notifyParticipantPresence([user])
+        }
+        this.events.status('P2P connected')
+      }
       if (connection.connectionState === 'disconnected' || connection.connectionState === 'failed' || connection.connectionState === 'closed') { this.connectedPeers.delete(peerId); this.notifyParticipants() }
       if (connection.connectionState === 'failed') this.events.status('P2P connection failed')
     }
@@ -193,10 +210,10 @@ export class RealtimeRoom {
   private sendSignal(target: string, payload: SignalPayload) { if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify({ type: 'signal', roomId: this.roomId, peerId: this.peerId, target, payload })) }
 
   private async handleMessage(message: { type: string; peers?: string[]; peerInfo?: Array<{ peerId: string; userId?: string; displayName?: string }>; peerId?: string; userId?: string; displayName?: string; from?: string; payload?: SignalPayload }) {
-    if (message.type === 'join-accepted') { signalLog('join accepted', { room: shortId(this.roomId) }); return }
-    if (message.type === 'room-peers') { const peerInfo: Array<{ peerId: string; userId?: string; displayName?: string }> = message.peerInfo || (message.peers || []).map((peerId) => ({ peerId })); signalLog('peers received', { count: peerInfo.length }); for (const peer of peerInfo) this.createPeer(peer.peerId, true, peer.displayName, peer.userId); this.notifyPeerIds(); this.notifyParticipants(); this.events.status(peerInfo.length ? 'Negotiating P2P' : 'Waiting for another peer'); return }
+    if (message.type === 'join-accepted') { signalLog('join accepted', { room: shortId(this.roomId) }); this.events.callJoined(); return }
+    if (message.type === 'room-peers') { const peerInfo: Array<{ peerId: string; userId?: string; displayName?: string }> = message.peerInfo || (message.peers || []).map((peerId) => ({ peerId })); signalLog('peers received', { count: peerInfo.length }); this.activeParticipantUsers = new Set(peerInfo.map((peer) => peer.userId || peer.peerId)); this.notifyParticipantPresence([], [], true); for (const peer of peerInfo) this.createPeer(peer.peerId, true, peer.displayName, peer.userId); this.notifyPeerIds(); this.notifyParticipants(); this.events.status(peerInfo.length ? 'Negotiating P2P' : 'Waiting for another peer'); return }
     if (message.type === 'peer-joined' && message.peerId) { signalLog('peer joined', { peer: shortId(message.peerId) }); this.createPeer(message.peerId, false, message.displayName, message.userId); this.notifyPeerIds(); return }
-    if (message.type === 'peer-left' && message.peerId) { const state = this.peers.get(message.peerId); state?.connection.close(); state?.pendingCandidates.splice(0); state?.remoteStreams.clear(); this.peers.delete(message.peerId); this.peerNames.delete(message.peerId); this.peerUsers.delete(message.peerId); this.connectedPeers.delete(message.peerId); this.notifyPeerIds(); this.notifyParticipants(); webrtcLog('peer left and state cleared', { peer: shortId(message.peerId) }); return }
+    if (message.type === 'peer-left' && message.peerId) { const state = this.peers.get(message.peerId); const user = this.peerUsers.get(message.peerId) || message.userId || message.peerId; state?.connection.close(); state?.pendingCandidates.splice(0); state?.remoteStreams.clear(); this.peers.delete(message.peerId); this.peerNames.delete(message.peerId); this.peerUsers.delete(message.peerId); this.connectedPeers.delete(message.peerId); this.notifyPeerIds(); this.notifyParticipants(); if (this.activeParticipantUsers.delete(user)) this.notifyParticipantPresence([], [user]); webrtcLog('peer left and state cleared', { peer: shortId(message.peerId) }); return }
     if (message.type !== 'signal' || !message.from || !message.payload) return
     const hadPeer = this.peers.has(message.from)
     if (message.from === this.peerId) { webrtcLog('ignoring self peer'); return }
