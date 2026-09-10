@@ -51,6 +51,52 @@
 
 Nenhuma chave privada, senha ou token foi registrado neste arquivo.
 
+## Trabalho realizado em 10 de setembro de 2026
+
+### WebRTC e chamadas
+
+- Corrigido o compartilhamento de tela remoto que permanecia congelado no último frame após ser encerrado.
+- O receptor encerra explicitamente as tracks de vídeo remotas e limpa o elemento `<video>`.
+- A transceiver de vídeo inicial não é mais interpretada como compartilhamento ativo.
+- Participantes sem compartilhamento aparecem como tiles com iniciais; a tela grande só aparece durante um compartilhamento real.
+- Os sons `call-join`, `call-leave`, `call-screen-start` e `call-screen-stop` foram confirmados e conectados aos eventos de call.
+
+### Chat e autenticação
+
+- O chat de Persistent Rooms foi conectado ao Supabase Database + Realtime.
+- Foi identificado e corrigido o caso de conta existente em `auth.users`, mas ausente em `profiles`, que causava erro 409 ao enviar mensagens.
+- A sessão inválida do Supabase foi diagnosticada como causa dos erros 400/401 de refresh e consultas autenticadas.
+- Foi mantido fallback local para ambientes sem Supabase, apenas para o protótipo.
+
+### Perfil e permissões
+
+- Adicionada aba Profile em Settings.
+- `display_name` pode ser alterado; username e email permanecem somente leitura.
+- Adicionada troca de senha.
+- Avatar pode ser enviado em JPG, JPEG, PNG ou WebP.
+- Imagens são convertidas para WebP no navegador antes do upload.
+- Adicionada a migration `supabase/migrations/202609100001_signal_avatar_storage.sql`, que cria o bucket `avatars` e suas políticas.
+- Avatar passou a aparecer na sidebar, no modal de membros das Rooms e no tile do usuário na call.
+- Settings permite testar novamente microfone e compartilhamento de tela após uma recusa de permissão.
+
+### Quick Rooms
+
+- Quick Rooms permanecem disponíveis enquanto ainda houver participantes.
+- Ao sair o último participante da call, a Quick Room é removida do Supabase e da lista local.
+- Persistent Rooms continuam permanentes, com membros e histórico.
+
+### Commits e releases do dia
+
+- `eecdfb5 Fix call media permissions and room chat`
+- `5d7b91f Add profile settings and avatar support`
+- `6e8042e Clean up quick rooms after final participant leaves`
+- `4912af3 Prepare SIGNALS 0.1.12 release`
+- A release `v0.1.11` foi publicada com sucesso.
+- A release `v0.1.12` foi criada e enviada; o workflow Tauri `34482014850` está compilando os instaladores Windows.
+- `npm run build` passou após as alterações.
+
+Nenhuma chave privada, senha ou token foi registrado neste arquivo.
+
 ## Estado atual — setembro de 2026
 
 - O rodapé da sidebar foi auditado e corrigido para usar a identidade da conta autenticada.
