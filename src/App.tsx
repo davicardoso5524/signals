@@ -18,6 +18,7 @@ const devLog = (scope: string, message: string) => { if (import.meta.env.DEV) co
 const shortId = (value: string) => value ? value.slice(0, 8) : 'none'
 const SETTINGS_CHANGED_EVENT = 'signals-settings-changed'
 const notifySettingsChanged = () => window.dispatchEvent(new Event(SETTINGS_CHANGED_EVENT))
+const playCallEventSound = (type: 'leave') => { const audio = new Audio(`/sounds/call-${type}.wav`); audio.volume = Math.max(0, Math.min(1, Number(localStorage.getItem('signal.audio.volume') || 72) / 100 * 0.35)); void audio.play().catch(() => undefined) }
 
 function mapRoom(record: { id: string; owner_id?: string; name: string; code: string; kind: Room['kind']; access: Room['access']; member_count?: number }): Room {
   return { id: record.id, ownerId: record.owner_id || '', name: record.name, meta: `${record.member_count || 0} people`, code: record.code, state: 'Ready', live: false, memberCount: record.member_count || 0, participantCount: 0, kind: record.kind, access: record.access, unread: 0 }
@@ -216,7 +217,7 @@ function SignalWorkspace() {
           </div>
         )}
 
-        {inCall && activeRoom && <SessionRail room={activeRoom} inCall={inCall} muted={muted} sharing={sharing} onMute={() => setMuted(!muted)} onEnterCall={() => { setInCall(true); setShowCall(true) }} onLeave={() => { setInCall(false); setShowCall(false) }} onCreate={() => setShowCreate(true)} />}
+        {inCall && activeRoom && <SessionRail room={activeRoom} inCall={inCall} muted={muted} sharing={sharing} onMute={() => setMuted(!muted)} onEnterCall={() => { setInCall(true); setShowCall(true) }} onLeave={() => { playCallEventSound('leave'); setInCall(false); setShowCall(false) }} onCreate={() => setShowCreate(true)} />}
       </main>
 
       {showCreate && <CreateRoomModal roomName={roomName} setRoomName={setRoomName} roomKind={roomKind} setRoomKind={setRoomKind} roomAccess={roomAccess} setRoomAccess={setRoomAccess} roomPassword={roomPassword} setRoomPassword={setRoomPassword} onClose={() => setShowCreate(false)} onSubmit={createRoom} />}
@@ -327,7 +328,11 @@ function RoomDetailsView({ room, userId, authorName, username, callActive, onBac
   const memberCount = Math.max(room.memberCount, visibleMembers.length)
 
   useEffect(() => {
-    if (!supabase || !userId) return
+    const localKey = `signals.roomMessages.${room.id}`
+    if (!supabase || !userId) {
+      try { setMessages(JSON.parse(localStorage.getItem(localKey) || '[]') as RoomMessage[]) } catch { setMessages([]) }
+      return
+    }
     let mounted = true
     listMessages(room.id).then((records) => {
       if (!mounted) return
@@ -350,9 +355,17 @@ function RoomDetailsView({ room, userId, authorName, username, callActive, onBac
         if (saved) setMessages((current) => current.some((item) => item.id === saved.id) ? current : [...current, { id: saved.id, roomId: saved.room_id, authorId: saved.author_id, authorName: saved.author?.display_name || authorName, username: saved.author?.username || username, content: saved.content, createdAt: new Date(saved.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }])
         setDraft('')
         return
-      } catch { setMessageError("Couldn't send the message. Try again."); return }
+      } catch (error) { setMessageError(error instanceof Error && error.message ? `Couldn't send the message: ${error.message}` : "Couldn't send the message. Try again."); return }
     }
-    if (!supabase || !userId) return
+    if (!userId) { setMessageError('You must be signed in to send messages.'); return }
+    const message: RoomMessage = { id: crypto.randomUUID(), roomId: room.id, authorId: userId, authorName, username, content, createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
+    const localKey = `signals.roomMessages.${room.id}`
+    setMessages((current) => {
+      const next = [...current, message]
+      localStorage.setItem(localKey, JSON.stringify(next))
+      return next
+    })
+    setDraft('')
   }
 
   const submitRename = async () => {
@@ -586,8 +599,11 @@ function VideoSettings() {
   const [mirror, setMirror] = useState(true)
   const [active, setActive] = useState(false)
   const [message, setMessage] = useState('Camera preview is off.')
+  const [screenActive, setScreenActive] = useState(false)
+  const [screenMessage, setScreenMessage] = useState('Screen permission has not been tested.')
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const screenStreamRef = useRef<MediaStream | null>(null)
 
   const refresh = async () => {
     const list = await navigator.mediaDevices?.enumerateDevices()
@@ -600,9 +616,27 @@ function VideoSettings() {
     stop()
     try { const stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: deviceId ? { exact: deviceId } : undefined, width: resolution === '1080p' ? 1920 : 1280, height: resolution === '1080p' ? 1080 : 720, frameRate: Number(fps) } }); streamRef.current = stream; if (videoRef.current) videoRef.current.srcObject = stream; setActive(true); setMessage('Camera preview is live.') } catch { setMessage('Camera permission was not granted.') }
   }
-  useEffect(() => { refresh().catch(() => setMessage('Camera devices are unavailable.')); return stop }, [])
+  const stopScreenTest = () => {
+    screenStreamRef.current?.getTracks().forEach((track) => track.stop())
+    screenStreamRef.current = null
+    setScreenActive(false)
+  }
+  const startScreenTest = async () => {
+    if (!navigator.mediaDevices?.getDisplayMedia) { setScreenMessage('This environment does not expose screen sharing.'); return }
+    stopScreenTest()
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false })
+      screenStreamRef.current = stream
+      stream.getVideoTracks()[0].onended = stopScreenTest
+      setScreenActive(true)
+      setScreenMessage('Screen sharing permission is available.')
+    } catch {
+      setScreenMessage('Screen sharing permission was not granted.')
+    }
+  }
+  useEffect(() => { refresh().catch(() => setMessage('Camera devices are unavailable.')); return () => { stop(); stopScreenTest() } }, [])
   useEffect(() => { if (active) start() }, [deviceId, resolution, fps])
-  return <><SettingsSection title="Camera preview" label="Video"><div className="video-preview-panel"><video ref={videoRef} autoPlay muted playsInline className={mirror ? 'is-mirrored' : ''} /><div className="video-preview-overlay"><span className="status-led" />{active ? `${resolution} · ${fps} FPS` : 'Preview offline'}</div></div><div className="audio-test-row"><span>{message}</span><button className="secondary-button" onClick={() => active ? stop() : start()}>{active ? 'Stop preview' : 'Start preview'}</button></div></SettingsSection><SettingsSection title="Capture profile" label="Quality"><div className="control-grid"><label>Camera<select className="device-select" value={deviceId} onChange={(event) => setDeviceId(event.target.value)}><option value="">Default camera</option>{devices.map((device, index) => <option value={device.deviceId} key={device.deviceId}>{device.label || `Camera ${index + 1}`}</option>)}</select></label><label>Resolution<select className="device-select" value={resolution} onChange={(event) => setResolution(event.target.value)}><option>1080p</option><option>720p</option></select></label><label>Frame rate<select className="device-select" value={fps} onChange={(event) => setFps(event.target.value)}><option value="30">30 FPS</option><option value="60">60 FPS</option></select></label></div><div className="toggle-row"><div><strong>Mirror preview</strong><small>Flip your local preview horizontally.</small></div><button className={`toggle ${mirror ? 'is-on' : ''}`} aria-label="Toggle mirrored preview" aria-pressed={mirror} onClick={() => setMirror(!mirror)}><span /></button></div></SettingsSection></>
+  return <><SettingsSection title="Camera preview" label="Video"><div className="video-preview-panel"><video ref={videoRef} autoPlay muted playsInline className={mirror ? 'is-mirrored' : ''} /><div className="video-preview-overlay"><span className="status-led" />{active ? `${resolution} · ${fps} FPS` : 'Preview offline'}</div></div><div className="audio-test-row"><span>{message}</span><button className="secondary-button" onClick={() => active ? stop() : start()}>{active ? 'Stop preview' : 'Start preview'}</button></div></SettingsSection><SettingsSection title="Screen sharing permission" label="Capture"><div className="audio-test-row"><span>{screenMessage}</span><button className="secondary-button" onClick={() => screenActive ? stopScreenTest() : void startScreenTest()}>{screenActive ? 'Stop test' : 'Test permission'}</button></div></SettingsSection><SettingsSection title="Capture profile" label="Quality"><div className="control-grid"><label>Camera<select className="device-select" value={deviceId} onChange={(event) => setDeviceId(event.target.value)}><option value="">Default camera</option>{devices.map((device, index) => <option value={device.deviceId} key={device.deviceId}>{device.label || `Camera ${index + 1}`}</option>)}</select></label><label>Resolution<select className="device-select" value={resolution} onChange={(event) => setResolution(event.target.value)}><option>1080p</option><option>720p</option></select></label><label>Frame rate<select className="device-select" value={fps} onChange={(event) => setFps(event.target.value)}><option value="30">30 FPS</option><option value="60">60 FPS</option></select></label></div><div className="toggle-row"><div><strong>Mirror preview</strong><small>Flip your local preview horizontally.</small></div><button className={`toggle ${mirror ? 'is-on' : ''}`} aria-label="Toggle mirrored preview" aria-pressed={mirror} onClick={() => setMirror(!mirror)}><span /></button></div></SettingsSection></>
 }
 
 function NetworkSettings() { const [autoReconnect, setAutoReconnect] = useState(true); const [adaptive, setAdaptive] = useState(true); const [relayFallback, setRelayFallback] = useState(true); const [testing, setTesting] = useState(false); const [message, setMessage] = useState('Connection test not run.'); const test = () => { setTesting(true); setMessage('Checking network route…'); window.setTimeout(() => { setTesting(false); setMessage('Network route check complete.') }, 1500) }; return <><SettingsSection title="Connection route" label="P2P network"><div className="network-status"><span className={`network-led ${testing ? 'is-testing' : ''}`} /><div><strong>{testing ? 'Checking route' : 'Route status unavailable'}</strong><small>{message}</small></div><span className="mono-label">—</span></div><div className="network-metrics"><div><span>Latency</span><strong>—</strong></div><div><span>Packet loss</span><strong>—</strong></div><div><span>Relay</span><strong>—</strong></div></div><button className="secondary-button" onClick={test}>{testing ? 'Testing…' : 'Test connection'}</button></SettingsSection><SettingsSection title="Resilience" label="Recovery"><div className="toggle-row"><div><strong>Auto reconnect</strong><small>Restore the session after a brief network loss.</small></div><button className={`toggle ${autoReconnect ? 'is-on' : ''}`} aria-label="Toggle auto reconnect" aria-pressed={autoReconnect} onClick={() => setAutoReconnect(!autoReconnect)}><span /></button></div><div className="toggle-row"><div><strong>Adaptive quality</strong><small>Adjust bitrate when the connection changes.</small></div><button className={`toggle ${adaptive ? 'is-on' : ''}`} aria-label="Toggle adaptive quality" aria-pressed={adaptive} onClick={() => setAdaptive(!adaptive)}><span /></button></div><div className="toggle-row"><div><strong>TURN fallback</strong><small>Use relay only when direct P2P cannot connect.</small></div><button className={`toggle ${relayFallback ? 'is-on' : ''}`} aria-label="Toggle TURN fallback" aria-pressed={relayFallback} onClick={() => setRelayFallback(!relayFallback)}><span /></button></div></SettingsSection></> }
@@ -794,8 +828,9 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
       remoteVideoEnded: (peerId) => {
         const currentStreams = remoteScreenStreamsRef.current
         const wasActive = Boolean(currentStreams[peerId])
+        currentStreams[peerId]?.getVideoTracks().forEach((track) => track.stop())
         const video = screenVideoRef.current
-        if (video && video.srcObject === currentStreams[peerId]) { video.pause(); video.srcObject = null; video.load() }
+        if (video && currentStreams[peerId] && video.srcObject === currentStreams[peerId]) { video.pause(); video.srcObject = null; video.load() }
         const next = { ...currentStreams }
         delete next[peerId]
         remoteScreenStreamsRef.current = next

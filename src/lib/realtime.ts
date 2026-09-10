@@ -27,6 +27,7 @@ type PeerState = {
   userId: string
   displayName: string
   remoteStreams: Set<MediaStream>
+  screenActive: boolean
 }
 
 const shortId = (value: string) => value ? value.slice(0, 8) : 'none'
@@ -218,6 +219,7 @@ export class RealtimeRoom {
       displayName,
       userId,
       remoteStreams: new Set(),
+      screenActive: false,
     }
     this.peers.set(peerId, state)
     this.peerNames.set(peerId, displayName || 'Participant')
@@ -233,7 +235,7 @@ export class RealtimeRoom {
       const stream = event.streams[0] || new MediaStream([event.track])
       state.remoteStreams.add(stream)
       if (event.track.kind === 'audio') { webrtcLog('remote audio track received', { peer: shortId(peerId) }); this.events.remoteAudio(stream, peerId) }
-      if (event.track.kind === 'video') { screenLog('remote screen track received', { peer: shortId(peerId) }); this.events.remoteVideo(stream, peerId) }
+      if (event.track.kind === 'video' && state.screenActive) { screenLog('remote screen track received', { peer: shortId(peerId) }); this.events.remoteVideo(stream, peerId) }
       event.track.onended = () => { state.remoteStreams.delete(stream); if (event.track.kind === 'audio') this.events.remoteAudioEnded(peerId); if (event.track.kind === 'video') this.events.remoteVideoEnded(peerId) }
     }
     connection.onconnectionstatechange = () => {
@@ -292,8 +294,12 @@ export class RealtimeRoom {
     if (!state) return
     if (!hadPeer) this.notifyPeerIds()
     const connection = state.connection
+    if (message.payload.screen !== undefined) state.screenActive = message.payload.screen
     if (message.payload.screen === false) {
       screenLog('remote screen stage inactive', { peer: shortId(message.from) })
+      for (const stream of state.remoteStreams) {
+        stream.getVideoTracks().forEach((track) => track.stop())
+      }
       this.events.remoteVideoEnded(message.from)
     }
     const description = message.payload.description
