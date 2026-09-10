@@ -59,6 +59,16 @@ export async function listRooms() {
   return (data || []).map((room) => ({ ...room, member_count: Array.isArray(room.room_members) ? room.room_members.length : 0 })) as unknown as RoomRecord[]
 }
 
+export function subscribeToRooms(onChange: () => void) {
+  const client = supabase
+  if (!client) return () => undefined
+  const channel: RealtimeChannel = client.channel('signal-rooms-list')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms' }, onChange)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'room_members' }, onChange)
+    .subscribe()
+  return () => { void client.removeChannel(channel) }
+}
+
 export async function listMessages(roomId: string) {
   if (!supabase) return [] as MessageRecord[]
   const { data, error } = await supabase.from('room_messages').select('id,room_id,author_id,content,created_at,author:profiles!room_messages_author_id_fkey(username,display_name)').eq('room_id', roomId).order('created_at', { ascending: true })

@@ -28,15 +28,20 @@ export async function createGroup(name: string, participantIds: string[]) {
   return data as Conversation
 }
 
+export async function deleteConversationForMe(conversationId: string) {
+  const { error } = await api().rpc('delete_signal_conversation_for_me', { target_conversation_id: conversationId })
+  if (error) throw error
+}
+
 export async function listConversations(currentUserId: string) {
   const client = api()
-  const { data: memberships, error: memberError } = await client.from('conversation_participants').select('conversation_id').eq('user_id', currentUserId)
+  const { data: memberships, error: memberError } = await client.from('conversation_participants').select('conversation_id,deleted_at').eq('user_id', currentUserId).is('deleted_at', null)
   if (memberError) throw memberError
   const ids = (memberships || []).map((row) => row.conversation_id as string)
   if (!ids.length) return [] as Conversation[]
   const [{ data: rows, error: conversationError }, { data: participants, error: participantsError }, { data: messages, error: messageError }] = await Promise.all([
     client.from('conversations').select('id,type,name,created_by,created_at,last_message_at').in('id', ids),
-    client.from('conversation_participants').select('conversation_id,user_id').in('conversation_id', ids),
+    client.from('conversation_participants').select('conversation_id,user_id,deleted_at').in('conversation_id', ids),
     client.from('messages').select('id,conversation_id,sender_id,content,created_at').in('conversation_id', ids).order('created_at', { ascending: false }),
   ])
   if (conversationError) throw conversationError
@@ -51,11 +56,21 @@ export async function listConversations(currentUserId: string) {
   const latestByConversation = new Map<string, Message>()
   for (const message of messages || []) if (!latestByConversation.has(message.conversation_id)) latestByConversation.set(message.conversation_id, message as Message)
   return (rows || []).map((row) => {
-    const conversationParticipants = (participants || []).filter((participant) => participant.conversation_id === row.id)
+    const conversationParticipants = (participants || []).filter((participant) => participant.conversation_id === row.id && participant.deleted_at === null)
     const otherId = conversationParticipants.find((participant) => participant.user_id !== currentUserId)?.user_id
     const latestMessage = latestByConversation.get(row.id) || null
     return { ...row, person: row.type === 'direct' ? profileById.get(otherId || '') : undefined, memberCount: conversationParticipants.length, latestMessage, latestAuthor: latestMessage ? profileById.get(latestMessage.sender_id) : undefined }
   }).sort((a, b) => new Date(b.last_message_at || b.created_at).getTime() - new Date(a.last_message_at || a.created_at).getTime()) as Conversation[]
+}
+
+export function subscribeToConversationChanges(onChange: () => void) {
+  const client = supabase
+  if (!client) return () => undefined
+  const channel: RealtimeChannel = client.channel('signal-conversations-list')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, onChange)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'conversation_participants' }, onChange)
+    .subscribe()
+  return () => { void client.removeChannel(channel) }
 }
 
 export async function listMessages(conversationId: string) {
