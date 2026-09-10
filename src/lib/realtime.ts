@@ -1,6 +1,6 @@
 import { getIceServers, getIceTransportPolicy, getSignalingWebSocketUrl } from './ice'
 
-type SignalPayload = { description?: RTCSessionDescriptionInit; candidate?: RTCIceCandidateInit }
+type SignalPayload = { description?: RTCSessionDescriptionInit; candidate?: RTCIceCandidateInit; screen?: boolean }
 
 type RealtimeEvents = {
   status: (status: string) => void
@@ -80,6 +80,7 @@ export class RealtimeRoom {
       void state.videoTransceiver.sender.replaceTrack(videoTrack).then(() => {
         screenLog(videoTrack ? 'local screen track added' : 'local screen track removed', { peer: shortId(peerId) })
       }).catch((error) => screenLog('failed to replace local screen track', { peer: shortId(peerId), error: error instanceof Error ? error.message : 'unknown error' }))
+      this.sendSignal(peerId, { screen: Boolean(videoTrack) })
     }
   }
 
@@ -203,6 +204,10 @@ export class RealtimeRoom {
     if (!state) return
     if (!hadPeer) this.notifyPeerIds()
     const connection = state.connection
+    if (message.payload.screen === false) {
+      screenLog('remote screen stage inactive', { peer: shortId(message.from) })
+      this.events.remoteVideoEnded(message.from)
+    }
     const description = message.payload.description
     if (description) {
       state.ignoreOffer = false

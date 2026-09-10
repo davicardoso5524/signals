@@ -753,7 +753,7 @@ function CallView({ room, localUserId, localName, muted, sharing, onMute, onShar
         remoteAudioRef.current.delete(peerId)
       },
       remoteVideo: (stream, peerId) => setRemoteScreenStreams((current) => ({ ...current, [peerId]: stream })),
-      remoteVideoEnded: (peerId) => setRemoteScreenStreams((current) => { const next = { ...current }; delete next[peerId]; return next }),
+      remoteVideoEnded: (peerId) => { setRemoteScreenStreams((current) => { const next = { ...current }; delete next[peerId]; return next }); if (document.fullscreenElement === screenStageRef.current) void document.exitFullscreen(); console.info('[SCREEN] remote screen stage inactive') },
     })
     realtimeRef.current = realtime
     console.info('[ROOM] resolved room=' + shortId(room.id))
