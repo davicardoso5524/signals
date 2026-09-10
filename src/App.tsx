@@ -61,6 +61,7 @@ function SignalWorkspace() {
   const [showCall, setShowCall] = useState(false)
   const [muted, setMuted] = useState(false)
   const [sharing, setSharing] = useState(false)
+  const [callParticipantCount, setCallParticipantCount] = useState(0)
   const [connecting, setConnecting] = useState(false)
   const [copied, setCopied] = useState(false)
   const [roomName, setRoomName] = useState('')
@@ -185,6 +186,19 @@ function SignalWorkspace() {
     void signOut()
   }
 
+  const leaveActiveCall = () => {
+    const roomToDelete = activeRoom?.kind === 'quick' && callParticipantCount <= 1 ? activeRoom : null
+    setInCall(false)
+    setShowCall(false)
+    setSharing(false)
+    if (roomToDelete) {
+      void deleteRoom(roomToDelete.id).catch(() => undefined)
+      setRoomList((current) => current.filter((room) => room.id !== roomToDelete.id))
+      setRoomDetail((current) => current?.id === roomToDelete.id ? null : current)
+      setActiveRoom(null)
+    }
+  }
+
   const accountName = profile?.display_name?.trim() || profile?.username?.trim() || user?.user_metadata?.display_name?.trim() || user?.user_metadata?.username?.trim() || user?.email?.split('@')[0]?.trim() || '?'
   const accountUsername = profile?.username?.trim() || user?.user_metadata?.username?.trim()
 
@@ -208,7 +222,7 @@ function SignalWorkspace() {
       </aside>
 
       <main className="main-area">
-        {inCall && activeRoom && <div className={`call-host ${showCall ? 'is-visible' : 'is-hidden'}`}><CallView room={activeRoom} localUserId={user?.id || ''} localName={profile?.display_name || profile?.username || user?.email?.split('@')[0] || 'You'} localAvatarUrl={profile?.avatar_url || ''} muted={muted} sharing={sharing} onMute={() => setMuted(!muted)} onShare={() => setSharing(!sharing)} onLeave={() => { setInCall(false); setShowCall(false) }} onInvite={() => setShowInvite(true)} /></div>}
+        {inCall && activeRoom && <div className={`call-host ${showCall ? 'is-visible' : 'is-hidden'}`}><CallView room={activeRoom} localUserId={user?.id || ''} localName={profile?.display_name || profile?.username || user?.email?.split('@')[0] || 'You'} localAvatarUrl={profile?.avatar_url || ''} muted={muted} sharing={sharing} onMute={() => setMuted(!muted)} onShare={() => setSharing(!sharing)} onParticipantCount={setCallParticipantCount} onLeave={leaveActiveCall} onInvite={() => setShowInvite(true)} /></div>}
         {(!inCall || !showCall) && (
           <div className="content-scroll">
             {view === 'Home' && <MinimalHomeView recentRooms={hasRoomHistory ? roomList.filter((room) => !dismissedRecentRooms.includes(room.id)).slice(0, 3) : []} rooms={roomList.filter((room) => room.kind === 'persistent').slice(0, 4)} onCreate={() => setShowCreate(true)} onJoin={joinRoom} onOpenRoom={(room) => { setRoomDetail(room); setView('Rooms') }} onDismissRecent={(roomId) => { setDismissedRecentRooms((current) => { const next = [...new Set([...current, roomId])]; if (user) localStorage.setItem(`signals.dismissedRecentRooms.${user.id}`, JSON.stringify(next)); return next }) }} joinError={joinError} />}
@@ -218,7 +232,7 @@ function SignalWorkspace() {
           </div>
         )}
 
-        {inCall && activeRoom && <SessionRail room={activeRoom} inCall={inCall} muted={muted} sharing={sharing} onMute={() => setMuted(!muted)} onEnterCall={() => { setInCall(true); setShowCall(true) }} onLeave={() => { playCallEventSound('leave'); setInCall(false); setShowCall(false) }} onCreate={() => setShowCreate(true)} />}
+        {inCall && activeRoom && <SessionRail room={activeRoom} inCall={inCall} muted={muted} sharing={sharing} onMute={() => setMuted(!muted)} onEnterCall={() => { setInCall(true); setShowCall(true) }} onLeave={() => { playCallEventSound('leave'); leaveActiveCall() }} onCreate={() => setShowCreate(true)} />}
       </main>
 
       {showCreate && <CreateRoomModal roomName={roomName} setRoomName={setRoomName} roomKind={roomKind} setRoomKind={setRoomKind} roomAccess={roomAccess} setRoomAccess={setRoomAccess} roomPassword={roomPassword} setRoomPassword={setRoomPassword} onClose={() => setShowCreate(false)} onSubmit={createRoom} />}
@@ -715,7 +729,7 @@ function ShortcutsSettings() { const [shortcuts, setShortcuts] = useState({ mute
 
 function SettingsSection({ title, label, children }: { title: string; label: string; children: React.ReactNode }) { return <section className="settings-section"><div className="settings-section-heading"><div><p className="eyebrow">{label}</p><h2>{title}</h2></div><span className="section-screw" /></div>{children}</section> }
 
-function CallView({ room, localUserId, localName, localAvatarUrl, muted, sharing, onMute, onShare, onLeave, onInvite }: { room: Room; localUserId: string; localName: string; localAvatarUrl: string; muted: boolean; sharing: boolean; onMute: () => void; onShare: () => void; onLeave: () => void; onInvite: () => void }) {
+function CallView({ room, localUserId, localName, localAvatarUrl, muted, sharing, onMute, onShare, onParticipantCount, onLeave, onInvite }: { room: Room; localUserId: string; localName: string; localAvatarUrl: string; muted: boolean; sharing: boolean; onMute: () => void; onShare: () => void; onParticipantCount: (count: number) => void; onLeave: () => void; onInvite: () => void }) {
   const SPEAKING_THRESHOLD = 0.055
   const SPEAKING_RELEASE_MS = 300
   type SpeakingDetector = { source: MediaStreamAudioSourceNode; analyser: AnalyserNode; samples: Uint8Array<ArrayBuffer>; track: MediaStreamTrack; speaking: boolean; silentSince: number | null }
@@ -857,14 +871,14 @@ function CallView({ room, localUserId, localName, localAvatarUrl, muted, sharing
     setParticipantCount(1)
     const realtime = new RealtimeRoom({
       status: (status) => setMediaStatus(status),
-      participants: (count) => setParticipantCount(count),
+      participants: (count) => { setParticipantCount(count); onParticipantCount(count) },
       callJoined: () => { if (localJoinSoundPlayedRef.current) return; localJoinSoundPlayedRef.current = true; playCallSound('join') },
       participantPresence: ({ addedUserIds, removedUserIds, initial }) => {
         if (initial) { devLog('CALL', 'join sound suppressed initial snapshot'); return }
         addedUserIds.forEach(() => playCallSound('join'))
         removedUserIds.forEach(() => playCallSound('leave'))
       },
-      peerIds: (ids) => { setRemotePeerIds(ids); setParticipantCount(ids.length + 1) },
+      peerIds: (ids) => { setRemotePeerIds(ids); setParticipantCount(ids.length + 1); onParticipantCount(ids.length + 1) },
       peerNames: (names) => setRemotePeerNames(names),
       peerUsers: (users) => setRemotePeerUsers(users),
       remoteAudio: (stream, peerId) => {
