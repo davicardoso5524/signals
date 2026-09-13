@@ -502,11 +502,9 @@ body { overflow: hidden; }
 .auth-loading { display: inline-flex; align-items: center; gap: 10px; color: var(--text); font-family: var(--mono); font-size: 12px; letter-spacing: .15em; }
 .auth-loading .status-led { position: static; }
 .license-panel .eyebrow { margin-top: 8px; overflow-wrap: anywhere; }
-.license-retry { display: block; margin: 18px auto 0; font-size: 10px; }
+.license-subscribe { display: block; color: #fff; text-align: center; text-decoration: none; }
+.license-signout { width: 100%; min-height: 42px; margin-top: 10px; }
 .license-network-note { position: fixed; right: 20px; bottom: 20px; left: 20px; max-width: 360px; margin-inline: auto; color: var(--danger); font-size: 10px; text-align: center; }
-.license-success-note { position: fixed; right: 20px; bottom: 20px; left: 20px; max-width: 360px; margin-inline: auto; color: var(--accent); font-size: 10px; text-align: center; }
-.license-logout { position: fixed; top: 20px; right: 20px; border: 0; color: var(--text-faint); background: transparent; font-family: var(--mono); font-size: 10px; cursor: pointer; }
-.license-logout:hover, .license-logout:focus-visible { color: var(--accent); }
 .sidebar-account-actions { display: flex; align-items: center; gap: 5px; }
 .logout-button { display: grid; width: 30px; height: 30px; place-items: center; border: 0; color: var(--text-faint); background: transparent; font-family: var(--mono); font-size: 15px; transform: rotate(180deg); }
 .logout-button:hover { color: var(--amber); }

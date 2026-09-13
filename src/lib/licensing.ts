@@ -12,7 +12,7 @@ export type LicenseSnapshot = {
 
 type CachedLicense = { snapshot: LicenseSnapshot; validatedAt: string }
 
-export type LicenseErrorCode = 'invalid-key' | 'used-key' | 'expired-key' | 'redeemed-key' | 'network' | 'unknown'
+export type LicenseErrorCode = 'network' | 'unknown'
 export type LicenseBlockReason = 'trial-expired' | 'subscription-inactive' | 'no-subscription'
 export type LicenseStatusResult = { snapshot: LicenseSnapshot | null; blockReason: LicenseBlockReason | null }
 
@@ -26,6 +26,42 @@ export class LicenseError extends Error {
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? value as Record<string, unknown> : {}
+}
+
+// Temporary diagnostics: keep this development-only and whitelist fields explicitly.
+function diagnosticLog(event: string, details: Record<string, unknown>) {
+  if (import.meta.env.DEV) console.info(`[license-diagnostic] ${event}`, details)
+}
+
+function diagnosticStatus(value: unknown) {
+  const payload = asRecord(value)
+  const nested = firstRecord(payload.data, payload.result)
+  const source = Object.keys(nested).length ? nested : payload
+  const trial = asRecord(source.trial)
+  const subscription = asRecord(source.subscription)
+  const adminGrant = asRecord(source.admin_access_grant || source.admin_grant || source.admin_access)
+  return {
+    active: source.active === true ? true : source.active === false ? false : undefined,
+    access_source: source.access_source ?? source.source,
+    source: typeof source.source === 'string' ? source.source : undefined,
+    expires_at: source.expires_at ?? source.expiresAt,
+    trial_present: Object.keys(trial).length > 0,
+    trial_status: trial.status,
+    trial_ends_at: trial.ends_at ?? trial.endsAt,
+    subscription_present: Object.keys(subscription).length > 0,
+    subscription_status: subscription.status,
+    admin_grant: Object.keys(adminGrant).length > 0 ? { active: adminGrant.active, status: adminGrant.status, expires_at: adminGrant.expires_at ?? adminGrant.expiresAt } : undefined,
+  }
+}
+
+function errorStatus(error: unknown) {
+  const details = asRecord(error)
+  return details.context instanceof Response ? details.context.status : undefined
+}
+
+function safeErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : 'Unknown error'
+  return message.replace(/Bearer\s+[^\s]+/gi, 'Bearer [redacted]').replace(/eyJ[a-zA-Z0-9._-]+/g, '[redacted-token]').slice(0, 300)
 }
 
 function firstRecord(...values: unknown[]) {
@@ -54,11 +90,15 @@ export function normalizeLicenseStatus(value: unknown): LicenseSnapshot | null {
   const nested = firstRecord(payload.data, payload.result)
   const source = Object.keys(nested).length ? nested : payload
   const license = validEntry(source.license || source.licence || source.subscription, 'license') ||
-    validEntry({ active: source.license_status || source.status, expires_at: source.license_expires_at || source.expires_at }, 'license')
+    validEntry({ active: source.subscription_status, expires_at: source.license_expires_at || source.current_period_end || source.expires_at }, 'license')
   if (license) return license
   const trial = validEntry(source.trial || source.trial_status, 'trial') ||
     validEntry({ active: source.trial_status, expires_at: source.trial_expires_at }, 'trial')
   if (trial) return trial
+  const directExpiry = expiryOf(source)
+  if (source.active === true && directExpiry && new Date(directExpiry).getTime() > Date.now()) {
+    return { access: source.access_source === 'trial' || source.source === 'trial' ? 'trial' : 'license', expiresAt: directExpiry, source }
+  }
   return null
 }
 
@@ -118,28 +158,15 @@ async function invoke(name: string, body?: Record<string, unknown>) {
 
 export async function fetchLicenseStatus(): Promise<LicenseStatusResult> {
   const deviceId = await installationDeviceId()
-  const data = await invoke('license-status', { device_id: deviceId })
-  const snapshot = normalizeLicenseStatus(data)
-  if (snapshot) cacheLicense(snapshot)
-  else localStorage.removeItem(CACHE_KEY)
-  return { snapshot, blockReason: snapshot ? null : classifyBlockedStatus(data) }
-}
-
-export async function activateLicenseKey(key: string) {
-  const deviceId = await installationDeviceId()
   try {
-    const data = await invoke('activate-key', { key: key.trim(), device_id: deviceId })
+    const data = await invoke('license-status', { device_id: deviceId })
     const snapshot = normalizeLicenseStatus(data)
-    if (!snapshot) throw new LicenseError('unknown', 'Activation completed, but no valid license was returned.')
-    cacheLicense(snapshot)
-    return snapshot
+    if (snapshot) cacheLicense(snapshot)
+    else localStorage.removeItem(CACHE_KEY)
+    diagnosticLog('license_status_response', { http_status: 200, ...diagnosticStatus(data), error: undefined, cache_used: false })
+    return { snapshot, blockReason: snapshot ? null : classifyBlockedStatus(data) }
   } catch (error) {
-    if (error instanceof LicenseError) throw error
-    const message = error instanceof Error ? error.message.toLowerCase() : ''
-    if (message.includes('redeem') || message.includes('fully') || message.includes('limit')) throw new LicenseError('redeemed-key', 'This key has been fully redeemed.')
-    if (message.includes('used') || message.includes('already')) throw new LicenseError('used-key', 'This key has already been used.')
-    if (message.includes('expir')) throw new LicenseError('expired-key', 'This key has expired.')
-    if (message.includes('invalid') || message.includes('not found')) throw new LicenseError('invalid-key', 'This key is invalid.')
+    diagnosticLog('license_status_response', { http_status: errorStatus(error), active: undefined, access_source: undefined, source: undefined, expires_at: undefined, trial_present: undefined, trial_status: undefined, trial_ends_at: undefined, subscription_present: undefined, subscription_status: undefined, admin_grant: undefined, error: safeErrorMessage(error), cache_used: false })
     throw error
   }
 }

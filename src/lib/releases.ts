@@ -11,6 +11,12 @@ export const currentVersion = packageJson.version
 
 export const releaseNotes: ReleaseNotes[] = [
   {
+    version: '0.1.17',
+    date: 'September 2026',
+    title: 'Simplified access blocking',
+    items: ['Removed license-key and manual trial flows from the desktop app.', 'Blocked accounts now receive a direct subscription message and site link.'],
+  },
+  {
     version: '0.1.16',
     date: 'September 2026',
     title: 'Authentication and licensing flow',
