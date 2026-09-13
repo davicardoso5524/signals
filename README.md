@@ -55,6 +55,4 @@ A migration em `supabase/migrations/202609080001_signal_profiles.sql` cria `prof
 
 Para habilitar salas persistentes e chat, aplique também `supabase/migrations/202609090001_signal_rooms_chat.sql` no SQL Editor do projeto. Ela cria `rooms`, `room_members`, `room_messages` e `room_read_states`, configura RLS e habilita `room_messages` no Realtime. Depois, reinicie o Vite para carregar as variáveis de `.env.local`.
 
-Para confirmar novos cadastros por código, em **Authentication → Email Templates → Confirm signup**,
-inclua `{{ .Token }}` no corpo do email. O app aceita códigos de 6 a 8 dígitos e também oferece reenvio.
-Se o provedor de email estiver adicionando links de rastreamento, o código evita depender desse link.
+As contas são criadas pelo site Signals. O aplicativo desktop oferece apenas login, recuperação e redefinição de senha.

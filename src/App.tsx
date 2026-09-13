@@ -2,11 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { RealtimeRoom } from './lib/realtime'
 import { AuthGate, useAuth } from './Auth'
+import { LicenseGate } from './LicenseGate'
 import { createRoom as createRoomInSupabase, deleteRoom, joinRoomByCode, leaveRoom, listMessages, listRoomMembers, listRooms, removeRoomMember, renameRoom, sendRoomMessage, subscribeToRoomMessages, subscribeToRooms, type RoomMemberRecord } from './lib/rooms'
 import { supabase, type Profile as SupabaseProfile } from './lib/supabase'
 import { UpdateGate } from './lib/updater'
 import { createGroup, deleteConversationForMe, findProfiles, getOrCreateDirect, listConversations, listMessages as listConversationMessages, listParticipants, sendMessage, subscribeToConversationChanges, subscribeToMessages, type Conversation, type Message, type Profile } from './lib/conversations'
 import { listFriendships, removeFriend, respondToFriendRequest, sendFriendRequest, subscribeToFriendships, type Friendship } from './lib/friends'
+import { showSignalNotification } from './lib/notifications'
+import { currentVersion, releaseNotes } from './lib/releases'
 
 type View = 'Home' | 'Friends' | 'Rooms' | 'Settings'
 type IconName = 'home' | 'people' | 'rooms' | 'settings' | 'search' | 'plus' | 'arrow' | 'copy' | 'mic' | 'headphones' | 'screen' | 'invite' | 'leave' | 'more' | 'close' | 'eye' | 'sun' | 'moon' | 'logout' | 'fullscreen' | 'bell'
@@ -79,9 +82,14 @@ function SignalWorkspace() {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [friendships, setFriendships] = useState<Friendship[]>([])
   const [showFriendRequests, setShowFriendRequests] = useState(false)
+  const [showUpdates, setShowUpdates] = useState(false)
   const [conversationDetail, setConversationDetail] = useState<Conversation | null>(null)
   const [profileCopied, setProfileCopied] = useState(false)
   const [theme, setTheme] = useState<Theme>(() => localStorage.getItem('signals-theme') === 'light' ? 'light' : 'dark')
+  const activeConversationIdRef = useRef<string | null>(null)
+  const activeRoomIdRef = useRef<string | null>(null)
+  const conversationsRef = useRef<Conversation[]>([])
+  conversationsRef.current = conversations
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -107,6 +115,11 @@ function SignalWorkspace() {
   }, [user?.id])
 
   useEffect(() => {
+    activeConversationIdRef.current = conversationDetail?.id || null
+    activeRoomIdRef.current = roomDetail?.id || null
+  }, [conversationDetail?.id, roomDetail?.id])
+
+  useEffect(() => {
     if (!user) return
     const refresh = () => { void listConversations(user.id).then(setConversations).catch(() => undefined) }
     refresh()
@@ -118,7 +131,11 @@ function SignalWorkspace() {
     if (!supabase || !user) return
     const refresh = () => { void listFriendships(user.id).then(setFriendships).catch(() => undefined) }
     refresh()
-    const unsubscribe = subscribeToFriendships(refresh)
+    const unsubscribe = subscribeToFriendships(refresh, (friendship) => {
+      if (friendship.addressee_id === user.id && friendship.status === 'pending') {
+        void showSignalNotification('New friend request', 'Someone wants to connect with you on SIGNALS.')
+      }
+    })
     return unsubscribe
   }, [user?.id])
 
@@ -126,11 +143,29 @@ function SignalWorkspace() {
   useEffect(() => {
     if (!supabase || !user || !conversationIds) return
     const refresh = () => { void listConversations(user.id).then(setConversations).catch(() => undefined) }
-    const unsubscribes = conversationIds.split(',').map((conversationId) => subscribeToMessages(conversationId, refresh))
+    const unsubscribes = conversationIds.split(',').map((conversationId) => subscribeToMessages(conversationId, (message) => {
+      refresh()
+      if (message.sender_id === user.id || activeConversationIdRef.current === message.conversation_id) return
+      const conversation = conversationsRef.current.find((item) => item.id === message.conversation_id)
+      if (conversation?.type === 'direct') {
+        void showSignalNotification(`Message from ${conversation.person?.display_name || 'a friend'}`, message.content)
+      }
+    }))
     return () => unsubscribes.forEach((unsubscribe) => unsubscribe())
   }, [conversationIds, user?.id])
 
-  const openConversation = (conversation: Conversation) => { setConversationDetail(conversation); setView('Friends'); setInCall(false); setShowCall(false) }
+  const roomIds = roomList.map((room) => room.id).join(',')
+  useEffect(() => {
+    if (!supabase || !user || !roomIds) return
+    const unsubscribes = roomIds.split(',').map((roomId) => subscribeToRoomMessages(roomId, (message) => {
+      if (message.author_id === user.id || activeRoomIdRef.current === message.room_id) return
+      const room = roomList.find((item) => item.id === message.room_id)
+      if (room) void showSignalNotification(`New message in ${room.name}`, message.content)
+    }))
+    return () => unsubscribes.forEach((unsubscribe) => unsubscribe())
+  }, [roomIds, user?.id, roomList])
+
+  const openConversation = (conversation: Conversation) => { activeConversationIdRef.current = conversation.id; setConversationDetail(conversation); setView('Friends'); setInCall(false); setShowCall(false) }
   const refreshConversations = () => { if (user) void listConversations(user.id).then(setConversations).catch(() => undefined) }
   const refreshFriendships = () => { if (user) void listFriendships(user.id).then(setFriendships).catch(() => undefined) }
 
@@ -225,7 +260,7 @@ function SignalWorkspace() {
     <div className="app-shell">
       <aside className="sidebar" aria-label="Primary navigation">
         <div className="brand-mark" aria-label="Signals"><i aria-hidden="true" /><span>SIGNALS</span></div>
-        <div className="sidebar-label-row"><div className="sidebar-label">Workspace</div><button className="notification-button" type="button" onClick={() => setShowFriendRequests(true)} aria-label={friendships.filter((item) => item.direction === 'incoming' && item.status === 'pending').length ? 'Open friend requests' : 'No new friend requests'} title="Friend requests"><Icon name="bell" size={16} />{friendships.filter((item) => item.direction === 'incoming' && item.status === 'pending').length > 0 && <span className="notification-badge">{friendships.filter((item) => item.direction === 'incoming' && item.status === 'pending').length}</span>}</button></div>
+        <div className="sidebar-label-row"><div className="sidebar-label">Workspace</div><div className="sidebar-label-actions"><button className="updates-button" type="button" onClick={() => setShowUpdates(true)} title="View updates">Updates</button><button className="notification-button" type="button" onClick={() => setShowFriendRequests(true)} aria-label={friendships.filter((item) => item.direction === 'incoming' && item.status === 'pending').length ? 'Open friend requests' : 'No new friend requests'} title="Friend requests"><Icon name="bell" size={16} />{friendships.filter((item) => item.direction === 'incoming' && item.status === 'pending').length > 0 && <span className="notification-badge">{friendships.filter((item) => item.direction === 'incoming' && item.status === 'pending').length}</span>}</button></div></div>
         <nav className="nav-list">
           {(['Home', 'Friends', 'Rooms', 'Settings'] as View[]).map((item) => (
             <button className={`nav-item ${view === item && !inCall ? 'is-active' : ''}`} key={item} onClick={() => { setView(item); setRoomDetail(null); setShowCall(false) }}>
@@ -240,13 +275,15 @@ function SignalWorkspace() {
         </div>
       </aside>
 
+      {showUpdates && <UpdatesModal onClose={() => setShowUpdates(false)} />}
+
       <main className="main-area">
         {inCall && activeRoom && <div className={`call-host ${showCall ? 'is-visible' : 'is-hidden'}`}><CallView room={activeRoom} localUserId={user?.id || ''} localName={profile?.display_name || profile?.username || user?.email?.split('@')[0] || 'You'} localAvatarUrl={profile?.avatar_url || ''} muted={muted} sharing={sharing} onMute={() => setMuted(!muted)} onShare={() => setSharing(!sharing)} onParticipantCount={setCallParticipantCount} onLeave={leaveActiveCall} onInvite={() => setShowInvite(true)} /></div>}
         {(!inCall || !showCall) && (
           <div className="content-scroll">
             {view === 'Home' && <MinimalHomeView recentRooms={hasRoomHistory ? roomList.filter((room) => !dismissedRecentRooms.includes(room.id)).slice(0, 3) : []} rooms={roomList.filter((room) => room.kind === 'persistent').slice(0, 4)} onCreate={() => setShowCreate(true)} onJoin={joinRoom} onOpenRoom={(room) => { setRoomDetail(room); setView('Rooms') }} onDismissRecent={(roomId) => { setDismissedRecentRooms((current) => { const next = [...new Set([...current, roomId])]; if (user) localStorage.setItem(`signals.dismissedRecentRooms.${user.id}`, JSON.stringify(next)); return next }) }} joinError={joinError} />}
-            {view === 'Friends' && (conversationDetail ? <ConversationView conversation={conversationDetail} userId={user?.id} onBack={() => setConversationDetail(null)} onChanged={refreshConversations} /> : <FriendsViewWithActions userId={user?.id} conversations={conversations} friendships={friendships} onOpen={openConversation} onChanged={refreshConversations} onFriendsChanged={refreshFriendships} />)}
-            {view === 'Rooms' && (roomDetail ? <RoomDetailsView room={roomDetail} userId={user?.id} authorName={profile?.display_name || user?.email || 'SIGNAL user'} username={profile?.username || 'account'} avatarUrl={profile?.avatar_url || ''} onBack={() => setRoomDetail(null)} callActive={inCall && activeRoom?.id === roomDetail.id} onStartCall={() => { setActiveRoom(roomDetail); setInCall(true); setShowCall(false) }} onOpenCall={() => setShowCall(true)} onCopy={() => copyCode(roomDetail)} copied={copied} onRenamed={(updated) => { setRoomDetail(updated); setRoomList((current) => current.map((item) => item.id === updated.id ? updated : item)); setActiveRoom((current) => current?.id === updated.id ? updated : current) }} onExited={() => { setRoomDetail(null); setActiveRoom(null); setInCall(false); setShowCall(false); setRoomList((current) => current.filter((item) => item.id !== roomDetail.id)); setView('Rooms') }} /> : <RoomsView roomList={roomList} userId={user?.id} onCreate={() => setShowCreate(true)} onOpenRoom={(room) => setRoomDetail(room)} onEnterCall={(room) => { setActiveRoom(room); setInCall(true); setShowCall(true) }} onRenamed={(updated) => setRoomList((current) => current.map((item) => item.id === updated.id ? updated : item))} onExited={(roomId) => setRoomList((current) => current.filter((item) => item.id !== roomId))} />)}
+            {view === 'Friends' && (conversationDetail ? <ConversationView conversation={conversationDetail} userId={user?.id} onBack={() => { activeConversationIdRef.current = null; setConversationDetail(null) }} onChanged={refreshConversations} /> : <FriendsViewWithActions userId={user?.id} conversations={conversations} friendships={friendships} onOpen={openConversation} onChanged={refreshConversations} onFriendsChanged={refreshFriendships} />)}
+            {view === 'Rooms' && (roomDetail ? <RoomDetailsView room={roomDetail} userId={user?.id} authorName={profile?.display_name || user?.email || 'SIGNAL user'} username={profile?.username || 'account'} avatarUrl={profile?.avatar_url || ''} onBack={() => { activeRoomIdRef.current = null; setRoomDetail(null) }} callActive={inCall && activeRoom?.id === roomDetail.id} onStartCall={() => { setActiveRoom(roomDetail); setInCall(true); setShowCall(false) }} onOpenCall={() => setShowCall(true)} onCopy={() => copyCode(roomDetail)} copied={copied} onRenamed={(updated) => { setRoomDetail(updated); setRoomList((current) => current.map((item) => item.id === updated.id ? updated : item)); setActiveRoom((current) => current?.id === updated.id ? updated : current) }} onExited={() => { setRoomDetail(null); setActiveRoom(null); setInCall(false); setShowCall(false); setRoomList((current) => current.filter((item) => item.id !== roomDetail.id)); setView('Rooms') }} /> : <RoomsView roomList={roomList} userId={user?.id} onCreate={() => setShowCreate(true)} onOpenRoom={(room) => setRoomDetail(room)} onEnterCall={(room) => { setActiveRoom(room); setInCall(true); setShowCall(true) }} onRenamed={(updated) => setRoomList((current) => current.map((item) => item.id === updated.id ? updated : item))} onExited={(roomId) => setRoomList((current) => current.filter((item) => item.id !== roomId))} />)}
             {view === 'Settings' && <SettingsView user={user} profile={profile} onProfileUpdated={refreshProfile} />}
           </div>
         )}
@@ -261,8 +298,12 @@ function SignalWorkspace() {
   )
 }
 
+function UpdatesModal({ onClose }: { onClose: () => void }) {
+  return <Modal title="Updates" onClose={onClose}><div className="updates-current"><span className="eyebrow">Current version</span><strong>Signals {currentVersion}</strong></div>{releaseNotes.map((release) => <article className="update-release" key={release.version}><div className="update-release-heading"><div><strong>Version {release.version}</strong><small>{release.date}</small></div><span className="mono-label">{release.version === currentVersion ? 'Current' : ''}</span></div><p>{release.title}</p><ul>{release.items.map((item) => <li key={item}>{item}</li>)}</ul></article>)}</Modal>
+}
+
 export default function App() {
-  return <UpdateGate><AuthGate><SignalWorkspace /></AuthGate></UpdateGate>
+  return <UpdateGate><AuthGate><LicenseGate><SignalWorkspace /></LicenseGate></AuthGate></UpdateGate>
 }
 
 function HomeView({ room, onCreate, onJoin, onEnterCall, onCopy, copied, connecting, onTestConnection }: { room: Room; onCreate: () => void; onJoin: () => void; onEnterCall: () => void; onCopy: () => void; copied: boolean; connecting: boolean; onTestConnection: () => void }) {
@@ -575,7 +616,7 @@ function ProfileSettings({ user, profile, onProfileUpdated }: { user: User | nul
 }
 
 function SettingsView({ user, profile, onProfileUpdated }: { user: User | null; profile: SupabaseProfile | null; onProfileUpdated: () => Promise<void> }) {
-  const [tab, setTab] = useState<'Profile' | 'Audio' | 'Video' | 'Network' | 'Shortcuts'>('Profile')
+  const [tab, setTab] = useState<'Profile' | 'Audio' | 'Video' | 'Network' | 'Shortcuts' | 'Updates'>('Profile')
   const [volume, setVolume] = useState(() => Number(localStorage.getItem('signal.audio.volume') || 72))
   const [inputVolume, setInputVolume] = useState(() => Number(localStorage.getItem('signal.audio.inputVolume') || 100))
   const [noiseReduction, setNoiseReduction] = useState(() => localStorage.getItem('signal.audio.noiseReduction') !== 'false')

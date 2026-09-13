@@ -122,3 +122,40 @@ Nenhuma chave privada, senha ou token foi registrado neste arquivo.
 - O build local do Tauri depende de Rust/Cargo; a build oficial da release foi concluída com sucesso no GitHub Actions.
 
 Nenhuma chave privada, senha ou token foi registrado neste arquivo.
+
+## Trabalho realizado após 10 de setembro de 2026
+
+### Friends e conversas
+
+- A aba `People` foi transformada em `Friends`.
+- Mensagens diretas continuam disponíveis sem exigir amizade.
+- Amigos aceitos aparecem em uma seção própria, com avatar e botão `Message`.
+- Resultados de busca exibem avatar e permitem enviar pedido de amizade.
+- Pedidos podem ser aceitos ou recusados por um sino de notificações com contador.
+- Os três pontos de um amigo permitem remover a amizade usando modal de confirmação.
+- Os três pontos de uma conversa permitem excluí-la usando modal de confirmação.
+- A exclusão de conversa é individual: ela desaparece para quem excluiu; se os dois participantes excluírem, a conversa e as mensagens são removidas do banco.
+- Adicionadas as migrations `202609100002_signal_friendships.sql`, `202609100004_signal_conversation_deletion.sql` e `202609100005_signal_friend_removal.sql`.
+
+### Atualização em tempo real
+
+- Conversas, participantes de conversas, Rooms e membros de Rooms passaram a atualizar a interface em tempo real.
+- Adicionada a migration `202609100003_signal_realtime_lists.sql` para incluir essas tabelas na publicação Realtime do Supabase.
+- Mensagens continuam sendo recebidas em tempo real na conversa ou Room aberta.
+
+### Desktop e mídia
+
+- A janela do Tauri inicia maximizada.
+- Clicar no `X` oculta o SIGNALS e mantém o processo ativo na bandeja do Windows.
+- O ícone da bandeja reabre/foca a janela e possui a opção `Quit SIGNALS` para encerrar o processo.
+- Corrigido o efeito de espelho infinito ao compartilhar a própria janela: o compartilhador não renderiza o stream local dentro do palco capturado.
+- O username do Profile agora usa fallback para os metadados da sessão quando a consulta pública de `profiles` não estiver disponível.
+
+### Commits e releases
+
+- `34faeb0 Add friends, realtime updates, and conversation controls` — release `v0.1.13` publicada com sucesso.
+- `2221619 Keep SIGNALS running in the Windows tray` — release `v0.1.14` publicada com sucesso.
+- `6a43e48 Fix profile username fallback` — release `v0.1.15` criada e enviada para build no GitHub Actions.
+- O build web passou nas validações realizadas.
+
+Nenhuma chave privada, senha ou token foi registrado neste arquivo.

@@ -4,14 +4,14 @@ pub fn run() {
     .setup(|app| {
       use tauri::{menu::{Menu, MenuItem}, tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}, Manager};
 
-      let open = MenuItem::with_id(app, "open", "Open SIGNALS", true, None::<&str>)?;
-      let quit = MenuItem::with_id(app, "quit", "Quit SIGNALS", true, None::<&str>)?;
+      let open = MenuItem::with_id(app, "open", "Open Signals", true, None::<&str>)?;
+      let quit = MenuItem::with_id(app, "quit", "Quit Signals", true, None::<&str>)?;
       let menu = Menu::with_items(app, &[&open, &quit])?;
 
       TrayIconBuilder::new()
         .icon(app.default_window_icon().cloned().expect("SIGNALS default icon is configured"))
         .menu(&menu)
-        .tooltip("SIGNALS")
+        .tooltip("Signals")
         .on_menu_event(|app, event| match event.id.as_ref() {
           "open" => {
             if let Some(window) = app.get_webview_window("main") {
@@ -45,6 +45,7 @@ pub fn run() {
     .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_process::init())
     .plugin(tauri_plugin_updater::Builder::new().build())
+    .plugin(tauri_plugin_notification::init())
     .run(tauri::generate_context!())
     .expect("error while running SIGNALS");
 }

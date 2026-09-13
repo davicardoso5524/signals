@@ -49,9 +49,12 @@ export async function removeFriend(friendshipId: string) {
   if (error) throw error
 }
 
-export function subscribeToFriendships(onChange: () => void) {
+export function subscribeToFriendships(onChange: () => void, onInsert?: (friendship: { requester_id: string; addressee_id: string; status: FriendshipStatus }) => void) {
   const client = supabase
   if (!client) return () => undefined
-  const channel: RealtimeChannel = client.channel('signal-friendships').on('postgres_changes', { event: '*', schema: 'public', table: 'friendships' }, onChange).subscribe()
+  const channel: RealtimeChannel = client.channel('signal-friendships').on('postgres_changes', { event: '*', schema: 'public', table: 'friendships' }, (payload) => {
+    onChange()
+    if (payload.eventType === 'INSERT') onInsert?.(payload.new as { requester_id: string; addressee_id: string; status: FriendshipStatus })
+  }).subscribe()
   return () => { void client.removeChannel(channel) }
 }
