@@ -11,6 +11,12 @@ export const currentVersion = packageJson.version
 
 export const releaseNotes: ReleaseNotes[] = [
   {
+    version: '0.1.18',
+    date: 'September 2026',
+    title: 'Supabase destination configuration',
+    items: ['Aligned the desktop release build with the current Supabase project configuration.'],
+  },
+  {
     version: '0.1.17',
     date: 'September 2026',
     title: 'Simplified access blocking',
